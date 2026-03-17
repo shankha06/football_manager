@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
-    from fm.db.models import Club, Season
+    from fm.db.models import Club, Season, Player
     from fm.engine.tactics import TacticalContext
 
 
@@ -198,6 +198,11 @@ class MatchContext:
 
     # List of (p1_id, p2_id, type, strength) from PlayerRelationship
     player_relationships: list[tuple[int, int, str, float]] = field(default_factory=list)
+
+    # DB session and season info for MatchSituationEngine
+    session: Session | None = None
+    season_year: int = 2024
+    matchday: int = 1
 
     # ── Derived modifiers ─────────────────────────────────────────────
 
@@ -748,11 +753,16 @@ def build_match_context(
     away_tactics: TacticalContext | None = None,
     season=None,
     is_cup: bool = False,
+    matchday: int = 1,
 ) -> MatchContext:
     """Build a fully populated MatchContext from DB state."""
     from fm.db.models import Player, LeagueStanding
 
-    ctx = MatchContext()
+    ctx = MatchContext(
+        session=session,
+        season_year=season.year if season else 2024,
+        matchday=matchday,
+    )
 
     # Home advantage
     cap = home_club.stadium_capacity or 30000

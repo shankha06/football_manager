@@ -45,8 +45,7 @@ ML-powered models, advanced psychology system, and a modern reactive browser UI.
 
 <br>
 
-> [!IMPORTANT]
-> **⚡ V3 is a complete architectural rewrite.** Browser-based with FastAPI + React, powered by a 16-state Markov chain possession engine, ML xG model, and cascading consequence system.
+> **⚡ V3 is a complete architectural rewrite.** Browser-based with FastAPI + React, powered by a 16-state Markov chain possession engine, ML xG model, and fully integrated **Match Situation Engine** for cascading consequences.
 
 <br><br>
 
@@ -111,7 +110,7 @@ ML-powered models, advanced psychology system, and a modern reactive browser UI.
 | 🎮 Engine | Tick-based possession | Markov chains (16-state) |
 | 🎯 Shots | Formula xG | ML logistic regression |
 | 😊 Psychology | Basic morale | Momentum, snowball, anxiety |
-| 🔗 Consequences | None | 8 cascading types |
+| 🔗 Consequences | None | 8 cascade types + 40+ match situations |
 | 🤕 Injuries | Weeks counter | 12 types + recovery curves |
 | 📊 Form | Rolling average | EWMA (dynamic weighted) |
 | 🖥️ Interface | Text TUI | React + Tailwind + WS |
@@ -236,10 +235,12 @@ fm/
 │   │   └── valuation_model.py
 │   └── ...
 │
-├── ⚡ core/                       # V3 infrastructure
-│   ├── event_bus.py              #   Pub/sub system
+├── ⚡ core/                       # V3 infrastructure & consequences
+│   ├── event_bus.py              #   Pub/sub system (40+ events)
 │   ├── game_state.py             #   State management
-│   └── consequence_engine.py     #   8 handlers
+│   ├── consequence_engine.py     #   Base consequence orchestrator
+│   ├── cascading_consequences.py #   6-system cascade engine
+│   └── match_situations.py       #   ✨ NEW: 40+ real-life match scenarios
 │
 ├── 🌍 world/                      # Game world
 │   ├── season.py, cup.py         #   Calendar & progression
@@ -340,6 +341,132 @@ tests/                             # 🧪 Comprehensive test suite
 
 </details>
 
+<details>
+<summary>
+<strong>⚽ 40+ Real-Life Match Situations (Short & Long-Term Impacts)</strong>
+</summary>
+
+<br>
+
+> **NEW SYSTEM**: `MatchSituationEngine` models 40+ authentic football scenarios with cascading consequences affecting psychology, form, morale, and transfer dynamics.
+
+### 🔴 Disciplinary Drama (2-4 MD effects)
+
+| Situation | Short-Term Impact | Medium-Term (1-3 MD) | Long-Term (4+ MD) |
+|:--|:--|:--|:--|
+| **Red Card (Violent)** | Momentum -0.25, Formation -15% xG | Friends lose 5-15 morale, Captain loses trust | Reputation -10, Discipline -15, Transfer request |
+| **Red Card (Reckless)** | Momentum -0.20, Player missing 1-2 matches | Squad unrest, Manager trust -5 | Stigma, worse form momentum |
+| **Early Red (Before min 20)** | Formation destroyed -35%, xG -40% | Defensive unit form -15, Team spirit -12 | Player benched, expectations +25 |
+| **Disputed Penalty** | Crowd fury, Referee controversy | Squad focus scattered | Media pressure spiral |
+| **VAR Controversy** | Momentum swing (large), Crowd impact | Media criticism, Manager frustration | Board confidence review |
+
+### ⚽ On-Pitch Performance Drama (1-2 MD recovery)
+
+| Situation | Short-Term Impact | Medium-Term | Long-Term |
+|:--|:--|:--|:--|
+| **Goalkeeper Error** | Momentum -0.20, xG deficit 15% | Form crater -12, Morale -10 | Possible benching, Discipline -5 |
+| **Missed Penalty** | Momentum -0.30, Confidence crash -25 | Form -15, Squad morale -3 | Loses penalty-taking duties |
+| **Own Goal** | Massive momentum shift to opposition | Player form -10, Reputation hit | Transfer requests possible |
+| **Defensive Collapse (3+ goals in 15min)** | Formation destroyed, Panic factor -25 | Defensive unit form -10, Spirit -10 | Tactical changes, Lineup review |
+| **Set Piece Failure** | Opposition xG advantage, Momentum | Formation confidence -8 | Tactical adjustment |
+| **Set Piece Success** | Own xG boost, Momentum surge | Tactical reputation +5 | Team belief surge |
+
+### 🔥 Momentum & Psychological (3-5 MD ripple effects)
+
+| Situation | Short-Term Impact | Medium-Term | Long-Term |
+|:--|:--|:--|:--|
+| **Late Goal (87-90min)** | Momentum +0.35 (comeback), Crowd +15 | Player confidence +12, Form +6 | Squad morale +2-5 each |
+| **Comeback Victory (2+ goal deficit)** | Momentum +0.40, Belief x2.0 | All squad morale +15, Form +8 | Narrative arc begins: "Resilient" |
+| **Upset Victory** | Momentum surge, Underdog boost | Squad morale +12, Form +10 | Tactical reputation +8 for manager |
+| **Clean Sheet (normal)** | Defensive confidence +12 | Defense form +8, Spirit +3 | GK form +6 |
+| **Clean Sheet (after injury crisis)** | Extra resilience factor | Defense form +8 (+5 bonus), Spirit +5 | Squad belief surge |
+| **Easy Win (3+ goal margin)** | Squad euphoria, Momentum spike | All players morale +8, Form +6 | Board confidence +8 |
+| **Narrow Loss (1-goal defeat)** | Frustration, Momentum -15 | Squad form -3, Morale -5 | Replay of match in media |
+
+### 👥 Player Performance Arcs (Multi-match narratives)
+
+| Situation | Short-Term | Medium-Term (1-3 MD) | Long-Term (4+ MD) |
+|:--|:--|:--|:--|
+| **Young Player Debut** | Confidence +8, Development +5 | Form +3-15ⁱ, Morale+4-12ⁱ | ⁱIf breakout: potential +3, playtime expectations +20 |
+| **Scoring Run (3+ in 3 MD)** | Hot streak multiplier x2.0, Confidence surge | Form +15, Morale +12, Market value x1.2 | Transfer interest +40, Agent interest |
+| **Goal Drought (5+ MD)** | Shooting confidence -20 | Form -12, Finishing -8, Substitution more often | 8+ MD: Transfer request triggered |
+| **Veteran Performance (age 33+)** | Leadership surge +15, Experience factor | Squad morale +6 (juniors especially) | Leadership/captain boost +5 |
+| **First Match Back (post-injury)** | Limited confidence, Form caution | Gradual restoration if no setback | Return to form trajectory |
+| **Recurring Injury (same player, same type)** | Recovery extended x1.3 (capped 12 weeks) | Morale -15, Confidence -10 | Injury proneness +10, Chronic illness flag |
+
+### 🏆 Competition & Contextual (2-4 MD effects, some longer)
+
+| Situation | Short-Term Impact | Medium-Term | Long-Term |
+|:--|:--|:--|:--|
+| **Derby/Rivalry Match Win** | Morale +8, Form +6, Spirit +5 | Squad celebration, Bragging rights | Historical record in head-to-head |
+| **Derby/Rivalry Match Loss** | Morale -8-10, Form -5-6, Spirit -5 | Squad depression, Media criticism | Revenge motivation for next derby |
+| **Unbeaten Run Broken** | Shock, Momentum collapse -0.25 | Form dip -8, Confidence -12 | Narrative: "But how?" |
+| **Historic Record Broken (beat/broken)** | Euphoria or devastation | Legendary status if beaten OR regret | Long-term narrative impact |
+| **Title Race Blow (loss to rival)** | Grand implications (xG now worse) | Squad paranoia, Form struggle | Transfer market implications |
+| **Cup Elimination (by rival)** | Playoff exit frustration | Form dips, Transfer requests | Champions League impact (EU leagues) |
+| **European Competition Exit** | Squad disappointment | Form -5-10, Morale -8 | Contract frustration, Top players leave |
+
+### 🏥 Health & Fitness Cascades (1-2 weeks immediate, 4+ MD long-term)
+
+| Situation | Short-Term Impact | Medium-Term | Long-Term |
+|:--|:--|:--|:--|
+| **Short Turnaround (2-3 days between matches)** | Stamina -20%, Fatigue -15 | Injury risk +8 for all | Recovery time needed |
+| **Multiple Injuries (3+ starters out)** | Formation collapse, xG -25 | Defense/midfield reorganization, Form struggle | Cascading panic (morale -5 all) |
+| **Illness Outbreak (2+ players)** | Squad availability crisis, Contagion risk | Additional players at risk | Morale impact (virus panic) |
+| **Weather Extreme (heavy rain/snow/heat)** | Technical play -15%, Ball control -10 | Fatigue +10%, Injury risk +5 | Recovery needed next 2 days |
+| **Travel Fatigue (long distance away match)** | Fitness -15%, Coordination -10 | Recovery day needed | Form dip -2-3 if immediate turnaround |
+
+### 🎯 Tactical & Management (Immediate 1-match, some 3+ MD)
+
+| Situation | Short-Term Impact | Medium-Term | Long-Term |
+|:--|:--|:--|:--|
+| **Tactical Masterclass (unexpected formation works)** | xG +20%, Formation advantage | Team belief +10, Morale +8 | Tactical reputation +8 for manager |
+| **Manager Outplayed (underperformance)** | Formation struggles, xG -15 | Board confidence -5, Squad doubt grows | Sacking probability review |
+| **Substitution Drama (star player hooked)** | Emotional moment, Squad shock | Substituted player morale -8-12, Captain -5 | Transfer request risk if repeated |
+| **Formation Change (mid-match tactical shift)** | xG adjustment (positive or brutal) | Squad adaptability +/- 5 | Tactical flexibility narrative |
+| **Player Fight (dressing room altercation)** | Immediate red card or suspension | Squad hierarchy shift, Friend groups affected | Long-term rift, Transfer requests |
+
+### 📊 **Cascading Narrative Examples**
+
+#### 🔴 **The Red Card Spiral**
+```
+Match 1: Player sent off (violent)
+├─ Short-term: Momentum -0.25, Team loses xG advantage
+├─ MD 1-3: Friends lose 5-15 morale, Team talks ineffective
+├─ MD 4-8: Reputation hits transfer market, Discipline -15
+└─ MD 9+: Transfer request if discipline < 40, Exit rumored
+```
+
+#### 🟢 **The Comeback Hero Arc**
+```
+Match 1: Score late goal in 90th min (comeback win)
+├─ Short-term: Momentum +0.35, Crowd euphoria
+├─ MD 1-3: Player form +6, Entire squad +2-5 morale each
+├─ MD 4-8: Confidence surge continues, "Resilient" narrative
+└─ MD 9+: Transfer offers spike, Agent interest rises
+```
+
+#### 🟡 **The Drought Crisis**
+```
+Match 1-5: Scorer without goals → Drought begins
+├─ MD 1-3: Confidence crash -20, Form -15, Special treatment
+├─ MD 4-6: Substitutions increase, Penalty duties lost
+├─ MD 7-8: Media criticism mounts, Squad doubts
+└─ MD 9+: Transfer request, Exit window speculation
+```
+
+#### ⚪ **The Injury Cascade**
+```
+Match 1: Star defender injured (recurring ACL)
+├─ Short-term: Defensive unit scrambles, xG -20
+├─ MD 1-3: Backup defender form -8, Squad morale -10
+├─ MD 4-8: Extended recovery (x1.3 multiplier = longer)
+├─ MD 9+: Chronic injury flag set, Transfer implications
+└─ Long-term: Player confidence stays low even on return
+```
+
+</details>
+
 <br>
 
 ## 📚 Tech Stack
@@ -402,6 +529,7 @@ uv run pytest -n auto
 uv run pytest tests/test_engine_v3.py \
   tests/test_ml_models.py \
   tests/test_consequences.py \
+  tests/test_v3_match_situations_integration.py \
   tests/test_api/ -v --tb=short
 
 # Watch mode (automatic rerun on changes)

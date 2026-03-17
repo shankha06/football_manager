@@ -12,8 +12,11 @@ from __future__ import annotations
 import enum
 import math
 import random
+import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+from fm.core.match_situations import MatchSituationEngine
 
 from fm.config import (
     MATCH_MINUTES, SCORECARD_INTERVAL,
@@ -997,6 +1000,35 @@ class AdvancedMatchEngine:
         # Calculate final ratings
         self._finalize_ratings(state)
 
+        # Match Situations: Post-match analysis
+        if state.home_goals == 0:
+            gk = state.get_gk("home")
+            if gk: self._trigger_situation(state, "handle_clean_sheet", player_id=gk.player_id)
+        if state.away_goals == 0:
+            gk = state.get_gk("away")
+            if gk: self._trigger_situation(state, "handle_clean_sheet", player_id=gk.player_id)
+
+        # comebacks / upsets
+        if state.home_goals > state.away_goals:
+            win_side = "home"
+        elif state.away_goals > state.home_goals:
+            win_side = "away"
+        else:
+            win_side = None
+
+        if win_side:
+            # Check for comeback / upset
+            score_diff = abs(state.home_goals - state.away_goals)
+            if score_diff >= 3:
+                # Potential upset if ratings were lower? 
+                # MatchSituationEngine usually handles reputation comparison.
+                pass
+
+        # Scoring runs
+        for p in state.home_players + state.away_players:
+            if p.goals > 0:
+                self._trigger_situation(state, "handle_scoring_run", player_id=p.player_id)
+
         self._match_context = None
         return state.to_result()
 
@@ -1816,6 +1848,10 @@ class AdvancedMatchEngine:
             )
         else:
             self._register_shot_miss(state, carrier, shot_result, minute, att_name, gk)
+            # Match Situations: Missed Penalty
+            if action.action_type == "penalty":
+                self._trigger_situation(state, "handle_missed_penalty", player_id=carrier.player_id, minute=minute)
+            
             # Corner chance on saved / blocked shots
             if shot_result.detail in ("saved", "blocked") and random.random() < 0.30:
                 state._inc(carrier.side, "corners")
@@ -2171,6 +2207,10 @@ class AdvancedMatchEngine:
             state.commentary.append(
                 f"{minute}' RED CARD! {fouler.name} is sent off for a terrible foul on {victim.name}!"
             )
+            # Match Situations: Red Card
+            self._trigger_situation(state, "handle_red_card_incident", player_id=fouler.player_id, incident_type="straight_red", minute=minute)
+            if minute < 20:
+                self._trigger_situation(state, "handle_early_red_card", player_id=fouler.player_id, minute=minute)
         elif dribble_result.is_yellow:
             fouler.yellow_cards += 1
             state._inc(fouler.side, "yellow_cards")
@@ -2182,6 +2222,8 @@ class AdvancedMatchEngine:
                 state.commentary.append(
                     f"{minute}' Second yellow for {fouler.name}! He's off!"
                 )
+                # Match Situations: Red Card (Second Yellow)
+                self._trigger_situation(state, "handle_red_card_incident", player_id=fouler.player_id, incident_type="second_yellow", minute=minute)
             else:
                 state.commentary.append(
                     f"{minute}' {fouler.name} is booked for the foul on {victim.name}."
@@ -2207,6 +2249,8 @@ class AdvancedMatchEngine:
                 )
             else:
                 self._register_shot_miss(state, attackers[0], pen_result, minute, att_name, gk)
+                # Match Situations: Missed Penalty
+                self._trigger_situation(state, "handle_missed_penalty", player_id=attackers[0].player_id, minute=minute)
         elif att_col >= ZoneCol.ATTACK:
             # Dangerous free kick
             state.commentary.append(f"{minute}' Free kick to {att_name} in a dangerous area.")
@@ -2248,6 +2292,24 @@ class AdvancedMatchEngine:
         opp_side = "away" if side == "home" else "home"
         state._update_momentum(opp_side, "concede")
 
+        # Match Situations: Late Goal
+        if minute >= 87:
+            score_diff = state.home_goals - state.away_goals
+            is_comeback = (side == "home" and score_diff == 1) or (side == "away" and score_diff == -1)
+            self._trigger_situation(state, "handle_late_goal", player_id=scorer.player_id, minute=minute, is_comeback=is_comeback)
+
+        # Match Situations: Defensive Collapse (3 goals in 15 mins)
+        recent_goals = [e for e in state.events if e["type"] == "goal" and e["side"] == side and minute - e["minute"] <= 15]
+        if len(recent_goals) >= 3:
+             self._trigger_situation(state, "handle_defensive_collapse", minute=minute)
+
+        # Match Situations: Goalkeeper Error
+        # If xG was very low but it was a goal, it might be an error (simplified)
+        if xg_val < 0.05 and random.random() < 0.4:
+            gk = state.get_gk(opp_side)
+            if gk:
+                self._trigger_situation(state, "handle_goalkeeper_error", player_id=gk.player_id, minute=minute)
+
         own_goals = state.home_goals if side == "home" else state.away_goals
         opp_goals = state.away_goals if side == "home" else state.home_goals
 
@@ -2277,6 +2339,45 @@ class AdvancedMatchEngine:
             state.commentary.append(f"{minute}' It's an equaliser!")
         if own_goals == opp_goals + 1 and minute >= 75:
             state.commentary.append(f"{minute}' What a time to take the lead!")
+
+    def _trigger_situation(self, state, method_name, **kwargs):
+        """Helper to trigger MatchSituationEngine and apply results to MatchState."""
+        if not self._match_context or not hasattr(self._match_context, 'session'):
+            return
+
+        session = self._match_context.session
+        if session is None:
+            return
+
+        # Find the player's club_id if possible
+        player_id = kwargs.get('player_id')
+        c_id = 0
+        if player_id:
+            from fm.db.models import Player
+            p_db = session.get(Player, player_id)
+            if p_db:
+                c_id = p_db.club_id
+
+        # Call the situation engine
+        method = getattr(MatchSituationEngine, method_name, None)
+        if method:
+            # Call and get results
+            result = method(
+                session=session,
+                club_id=c_id,
+                season=self._match_context.season_year,
+                matchday=self._match_context.matchday,
+                **kwargs
+            )
+            
+            # Apply results (e.g. momentum)
+            if result and "momentum_change" in result:
+                 # result["momentum_change"] is usually a float
+                 pass
+            
+            # News and commentary
+            if result and "news" in result:
+                state.commentary.append(f"HOT NEWS: {result['news']['title']}")
 
     def _register_shot_miss(
         self,
@@ -2667,6 +2768,8 @@ class AdvancedMatchEngine:
                 "player_on": best_sub.name, "player_on_id": best_sub.player_id,
                 "player_off": out_player.name, "player_off_id": out_player.player_id,
             })
+            # Match Situations: Young Player Debut
+            self._trigger_situation(state, "handle_young_player_debut", player_id=best_sub.player_id, minute=minute)
 
     # ── Scorecard generation ──────────────────────────────────────────────
 
