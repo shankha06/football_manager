@@ -1,0 +1,204 @@
+@import "tailwindcss";
+
+:root {
+  --fm-bg: #0a0e17;
+  --fm-surface: #111827;
+  --fm-surface2: #1a1f2e;
+  --fm-border: #2a3042;
+  --fm-text: #e2e8f0;
+  --fm-text-muted: #64748b;
+  --fm-accent: #3b82f6;
+  --fm-green: #22c55e;
+  --fm-red: #ef4444;
+  --fm-yellow: #eab308;
+  --fm-orange: #f97316;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(135deg, var(--fm-bg) 0%, #0d1220 50%, #0a0e17 100%);
+  color: var(--fm-text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--fm-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fm-text-muted); }
+
+/* ── Card utility ── */
+.card {
+  background: var(--fm-surface);
+  border: 1px solid var(--fm-border);
+  border-radius: 12px;
+  padding: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--fm-border) 70%, var(--fm-accent) 30%);
+}
+
+.card-interactive {
+  cursor: pointer;
+}
+
+.card-interactive:hover {
+  border-color: var(--fm-accent);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.08);
+}
+
+/* ── Stat number ── */
+.stat-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* ── Smooth transitions on interactive elements ── */
+a, button, input, select, textarea {
+  transition: all 150ms ease;
+}
+
+/* ── Input styling ── */
+input, select, textarea {
+  color: var(--fm-text);
+  outline: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--fm-accent);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* ── Table base ── */
+table {
+  border-collapse: collapse;
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: var(--fm-text);
+}
+
+/* ── Goal flash animation ── */
+@keyframes goalFlash {
+  0% { background-color: rgba(34, 197, 94, 0.2); }
+  50% { background-color: rgba(34, 197, 94, 0.08); }
+  100% { background-color: transparent; }
+}
+
+.goal-flash {
+  animation: goalFlash 2s ease-out;
+}
+
+/* ── Pulse dot for live match ── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* ── Progress bar fill animation ── */
+@keyframes fillBar {
+  from { width: 0%; }
+}
+
+.animate-fill {
+  animation: fillBar 0.8s ease-out forwards;
+}
+
+/* ── Fade in up ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* ── Staggered fade ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+/* ── Subtle glow for unread items ── */
+.unread-glow {
+  box-shadow: inset 3px 0 0 var(--fm-accent), 0 0 12px rgba(59, 130, 246, 0.06);
+}
+
+/* ── Number count up (for tabular numbers) ── */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Row hover lift ── */
+.row-hover:hover {
+  background-color: var(--fm-surface2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+/* ── Slide in from right ── */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* ── Score pulse ── */
+@keyframes scorePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.score-pulse {
+  animation: scorePulse 0.5s ease-out;
+}
+
+/* ── Screen flash for goals ── */
+@keyframes screenFlash {
+  0% { opacity: 0.15; }
+  100% { opacity: 0; }
+}
+
+.screen-flash {
+  animation: screenFlash 1s ease-out forwards;
+}
+
+/* ── Card flash on new item ── */
+@keyframes cardFlash {
+  0% { border-color: var(--fm-green); box-shadow: 0 0 20px rgba(34, 197, 94, 0.2); }
+  100% { border-color: var(--fm-border); box-shadow: none; }
+}
+
+.card-flash {
+  animation: cardFlash 2s ease-out;
+}
+
+/* ── Subtle gradient text ── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--fm-accent), #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
