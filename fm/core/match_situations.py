@@ -147,11 +147,11 @@ class MatchSituationEngine:
 
         # LONG-TERM: Reputation spiral & transfer implications (4+ MD)
         player.form = clamp(player.form - 8, 0, 100)  # Confidence crater
-        player.discipline = clamp(player.discipline - 15, 0, 100)  # Stigma
+        player.professionalism = clamp((player.professionalism or 50) - 15, 0, 100)  # Stigma
 
         # Potential transfer request if repeat offender
-        if (player.discipline or 80) < 40:
-            player.transfer_request = True
+        if (player.professionalism or 80) < 40:
+            player.wants_transfer = True
 
         # News generation
         incident_desc = {
@@ -201,7 +201,7 @@ class MatchSituationEngine:
 
         # MEDIUM-TERM: Player confidence spike, morale cascade
         player.morale = clamp(player.morale + 8, 0, 100)
-        player.confidence = clamp(player.confidence + 12, 0, 100)  # If exists
+        player.form = clamp(player.form + 12, 0, 100)
 
         # Friends celebrate together (morale boost)
         relationships = session.query(PlayerRelationship).filter(
@@ -317,7 +317,7 @@ class MatchSituationEngine:
         # MEDIUM-TERM: Player confidence crisis
         player.morale = clamp(player.morale - 20, 0, 100)
         player.form = clamp(player.form - 15, 0, 100)
-        player.penalty_taking = clamp((player.penalties or 50) - 10, 0, 100)
+        player.penalties = clamp((player.penalties or 50) - 10, 0, 100)
 
         # Teammates question penalty-taker (morale hit)
         squad = session.query(Player).filter_by(club_id=club_id).all()
@@ -389,7 +389,7 @@ class MatchSituationEngine:
         # LONG-TERM: Squad loses confidence, manager under pressure
         tac = session.query(TacticalSetup).filter_by(club_id=club_id).first()
         if tac:
-            tac.defensive_confidence = clamp((tac.defensive_confidence or 70) - 15, 0, 100)
+            pass  # No defensive_confidence attribute in model
 
         session.add(NewsItem(
             season=season, matchday=matchday,
@@ -524,11 +524,11 @@ class MatchSituationEngine:
         player.finishing = clamp((player.finishing or 70) - 8, 0, 100)
 
         # Striker gets substituted more often
-        player.performance_expectation = clamp((player.performance_expectation or 70) + 15, 0, 100)
+        pass
 
         # LONG-TERM: Transfer rumors if drought continues past 8-10 matches
         if matches_without_goal >= 8:
-            player.transfer_request = True
+            player.wants_transfer = True
 
         session.add(NewsItem(
             season=season, matchday=matchday,
@@ -567,7 +567,6 @@ class MatchSituationEngine:
         # MEDIUM-TERM: Form/morale/market value boost
         player.form = clamp(player.form + 15, 0, 100)
         player.morale = clamp(player.morale + 12, 0, 100)
-        player.market_value_multiplier = clamp((player.market_value_multiplier or 1.0) * 1.2, 0.5, 2.0)
 
         # Teammates feed off energy
         relationships = session.query(PlayerRelationship).filter(
@@ -693,13 +692,10 @@ class MatchSituationEngine:
                 p.morale = clamp(p.morale - 15, 0, 100)
 
         # Player faces significant disciplinary aftermath
-        player.discipline = clamp(player.discipline - 20, 0, 100)
+        player.professionalism = int(clamp((player.professionalism or 50) - 20, 0, 99))
         player.form = clamp(player.form - 20, 0, 100)
 
         club.team_spirit = clamp(club.team_spirit - 12, 0, 100)
-
-        # LONG-TERM: Player likely benched/dropped
-        player.performance_expectation = clamp((player.performance_expectation or 70) + 25, 0, 100)
 
         session.add(NewsItem(
             season=season, matchday=matchday,
@@ -742,10 +738,6 @@ class MatchSituationEngine:
             # Performance slightly reduced
             if result == "L":
                 player.form = clamp(player.form - 3, 0, 100)
-
-        # Injury risk increases
-        for player in squad:
-            player.injury_risk = clamp((player.injury_risk or 20) + 8, 0, 100)
 
         # LONG-TERM: Recovery time needed
         club.team_spirit = clamp(club.team_spirit - 2, 0, 100) if result == "L" else club.team_spirit
@@ -790,9 +782,6 @@ class MatchSituationEngine:
             player.form = clamp(player.form + 15, 0, 100)
             player.morale = clamp(player.morale + 12, 0, 100)
             player.potential = clamp((player.potential or 70) + 3, 0, 100)
-
-            # More minutes next match
-            player.playing_time_expectation = clamp((player.playing_time_expectation or 40) + 20, 0, 100)
 
             session.add(NewsItem(
                 season=season, matchday=matchday,
@@ -954,14 +943,14 @@ class MatchSituationEngine:
 
         # MEDIUM-TERM: Psychological impact
         player.morale = clamp(player.morale - 15, 0, 100)
-        player.confidence = clamp((player.confidence or 70) - 10, 0, 100)
+        player.form = clamp(player.form - 10, 0, 100)
 
         # LONG-TERM: Increased injury proneness, transfer implications
         player.injury_proneness = clamp((player.injury_proneness or 20) + 10, 0, 100)
 
         # Risk of chronic issues
         if previous_recovery_time >= 4:
-            player.chronic_injury = True
+            pass  # No chronic_injury attribute in model
 
         session.add(NewsItem(
             season=season, matchday=matchday,
