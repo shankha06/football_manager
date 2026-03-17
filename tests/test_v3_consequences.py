@@ -25,11 +25,22 @@ from fm.core.event_bus import (
     PROMISE_BROKEN,
     YOUTH_PLAYED,
 )
+from fm.core.cascading_consequences import (
+    CascadingNarrativeEngine,
+    DressingRoomPolitics,
+    FinancialPressure,
+    FormSpiral,
+    InjuryCascade,
+    ManagerJobSecurity,
+)
 from fm.db.models import (
     Base,
     BoardExpectation,
     Club,
     ConsequenceLog,
+    Injury,
+    League,
+    LeagueStanding,
     Player,
     PlayerRelationship,
     Promise,
@@ -484,4 +495,313 @@ class TestMissedBigChancesComposure:
         striker = db_session.get(Player, 3)
         assert striker.morale < initial_morale, (
             f"Striker morale should drop after missing 3 big chances: {striker.morale} vs {initial_morale}"
+        )
+
+
+# ===========================================================================
+# Cascading Consequence Tests
+# ===========================================================================
+
+
+@pytest.fixture()
+def cascade_session():
+    """Create an in-memory SQLite DB with all tables and richer seed data
+    for cascading consequence tests.
+    """
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+
+    # League
+    league = League(id=1, name="Test League", country="Testland", tier=1, num_teams=20)
+    session.add(league)
+
+    # Club
+    club = Club(
+        id=1, name="Test FC", team_spirit=70.0, league_id=1,
+        budget=10.0, wage_budget=100.0, total_wages=80.0,
+        youth_academy_level=5, medical_facility_level=5,
+    )
+    session.add(club)
+
+    # Board expectation
+    board = BoardExpectation(
+        club_id=1, season=1,
+        board_confidence=60.0, fan_happiness=60.0,
+        min_league_position=1, max_league_position=10,
+        transfer_embargo=False, ultimatum_active=False,
+        patience=3,
+    )
+    session.add(board)
+
+    # League standing with form
+    standing = LeagueStanding(
+        league_id=1, club_id=1, season=1,
+        played=10, won=3, drawn=2, lost=5,
+        goals_for=15, goals_against=20, goal_difference=-5,
+        points=11, form="WDLWL",
+    )
+    session.add(standing)
+
+    # Create a squad of 8 players with varying attributes
+    players_data = [
+        dict(id=1, name="Captain", age=28, position="CB", club_id=1,
+             leadership=85, morale=70.0, happiness=70.0, trust_in_manager=70.0,
+             overall=82, ambition=60, nationality="England", composure=70),
+        dict(id=2, name="Midfielder", age=25, position="CM", club_id=1,
+             leadership=50, morale=70.0, happiness=65.0, trust_in_manager=65.0,
+             overall=75, ambition=75, nationality="England", composure=65),
+        dict(id=3, name="Striker", age=26, position="ST", club_id=1,
+             leadership=45, morale=70.0, happiness=65.0, trust_in_manager=65.0,
+             overall=78, ambition=80, nationality="Brazil", composure=60),
+        dict(id=4, name="Winger", age=24, position="LW", club_id=1,
+             leadership=40, morale=70.0, happiness=65.0, trust_in_manager=65.0,
+             overall=74, ambition=50, nationality="Brazil", composure=55),
+        dict(id=5, name="Youth Star", age=19, position="CAM", club_id=1,
+             leadership=30, morale=70.0, happiness=65.0, trust_in_manager=65.0,
+             overall=62, ambition=70, nationality="Brazil", goals_season=4,
+             composure=50),
+        dict(id=6, name="Backup GK", age=30, position="GK", club_id=1,
+             leadership=50, morale=35.0, happiness=35.0, trust_in_manager=25.0,
+             overall=65, ambition=40, nationality="France", composure=60),
+        dict(id=7, name="Reserve CB", age=22, position="CB", club_id=1,
+             leadership=35, morale=30.0, happiness=30.0, trust_in_manager=20.0,
+             overall=60, ambition=65, nationality="France", composure=45),
+        dict(id=8, name="Reserve CM", age=23, position="CM", club_id=1,
+             leadership=30, morale=25.0, happiness=25.0, trust_in_manager=20.0,
+             overall=58, ambition=55, nationality="France", composure=40),
+    ]
+    for pd in players_data:
+        session.add(Player(**pd))
+
+    session.commit()
+    yield session
+    session.close()
+
+
+class TestLosingStreakTriggersMoraleCollapse:
+    """Set form to 'LLLLL', run FormSpiral -> verify morale + board drops."""
+
+    def test_losing_streak_triggers_morale_collapse(self, cascade_session: Session):
+        # Set form to show 5 consecutive losses
+        standing = (
+            cascade_session.query(LeagueStanding)
+            .filter_by(club_id=1, season=1)
+            .first()
+        )
+        standing.form = "WDLLLLL"
+        cascade_session.flush()
+
+        # Record initial values
+        board = cascade_session.query(BoardExpectation).filter_by(club_id=1).first()
+        initial_confidence = board.board_confidence
+        p1 = cascade_session.get(Player, 1)
+        initial_morale = p1.morale
+
+        effects = FormSpiral.process_streak(cascade_session, 1, "L", matchday=10, season=1)
+        cascade_session.flush()
+
+        board = cascade_session.query(BoardExpectation).filter_by(club_id=1).first()
+        p1 = cascade_session.get(Player, 1)
+
+        assert board.board_confidence < initial_confidence, (
+            f"Board confidence should drop: {board.board_confidence} vs {initial_confidence}"
+        )
+        assert p1.morale < initial_morale, (
+            f"Morale should drop: {p1.morale} vs {initial_morale}"
+        )
+        assert len(effects) > 0, "Should generate effect descriptions"
+
+
+class TestDressingRoomTension:
+    """Set 4 players happiness < 40 -> verify TENSION state effects."""
+
+    def test_dressing_room_tension(self, cascade_session: Session):
+        # Players 6, 7, 8 already have low happiness/trust
+        # Make player 4 also unhappy to trigger tension (need 3+)
+        p4 = cascade_session.get(Player, 4)
+        p4.happiness = 35.0
+        p4.trust_in_manager = 25.0
+        cascade_session.flush()
+
+        # Count unhappy to verify precondition
+        squad = cascade_session.query(Player).filter_by(club_id=1).all()
+        unhappy_count = len([
+            p for p in squad
+            if (p.happiness or 65) < 40 or (p.trust_in_manager or 60) < 30
+        ])
+        assert unhappy_count >= 3, f"Need >= 3 unhappy, got {unhappy_count}"
+
+        # Record initial form values
+        initial_forms = {p.id: p.form for p in squad}
+
+        state = DressingRoomPolitics.process_squad_harmony(
+            cascade_session, 1, season=1, matchday=10,
+        )
+        cascade_session.flush()
+
+        assert state in ("tension", "mutiny"), f"Expected tension or mutiny, got: {state}"
+
+        # Form should have dropped for squad members
+        squad = cascade_session.query(Player).filter_by(club_id=1).all()
+        form_dropped = any(
+            p.form < initial_forms[p.id] for p in squad
+        )
+        assert form_dropped, "At least some players should have reduced form"
+
+
+class TestInjuryCascadeMedicalCrisis:
+    """Create 5 active injuries -> verify medical crisis flag and effects."""
+
+    def test_injury_cascade_medical_crisis(self, cascade_session: Session):
+        # Create 5 active injuries
+        for i, pid in enumerate([1, 2, 3, 4, 5]):
+            inj = Injury(
+                player_id=pid, club_id=1, season=1, matchday_occurred=5 + i,
+                injury_type="hamstring", severity="moderate",
+                recovery_weeks_total=4, recovery_weeks_remaining=3,
+                is_active=True,
+            )
+            cascade_session.add(inj)
+        cascade_session.flush()
+
+        # Record initial state
+        board = cascade_session.query(BoardExpectation).filter_by(club_id=1).first()
+        initial_confidence = board.board_confidence
+
+        effects = InjuryCascade.process_injury_impact(
+            cascade_session, club_id=1, injured_player_id=6,
+            injury_type="ankle", severity="moderate",
+            season=1, matchday=10,
+        )
+        cascade_session.flush()
+
+        # Board confidence should drop from epidemic
+        board = cascade_session.query(BoardExpectation).filter_by(club_id=1).first()
+        assert board.board_confidence < initial_confidence, (
+            f"Board confidence should drop: {board.board_confidence} vs {initial_confidence}"
+        )
+        # Should mention injury crisis in effects
+        crisis_mentioned = any("crisis" in e.lower() or "epidemic" in e.lower() for e in effects)
+        assert crisis_mentioned, f"Should mention crisis/epidemic: {effects}"
+
+
+class TestFinancialCrisisForcedSale:
+    """Set wages > budget -> verify player marked for sale."""
+
+    def test_financial_crisis_forced_sale(self, cascade_session: Session):
+        club = cascade_session.get(Club, 1)
+        club.total_wages = 120.0  # > wage_budget of 100
+        club.wage_budget = 100.0
+
+        # Give a rotation player a wage
+        p7 = cascade_session.get(Player, 7)
+        p7.squad_role = "rotation"
+        p7.wage = 5.0
+        p7.market_value = 2.0
+        cascade_session.flush()
+
+        effects = FinancialPressure.process_financial_state(
+            cascade_session, club_id=1, season=1, matchday=10,
+        )
+        cascade_session.flush()
+
+        # At least one player should be marked for sale
+        forced_sale = cascade_session.query(Player).filter_by(
+            club_id=1, wants_transfer=True
+        ).all()
+        assert len(forced_sale) > 0, "At least one player should want transfer after financial crisis"
+        assert len(effects) > 0, "Should generate effect descriptions"
+
+
+class TestSackingProbabilityScales:
+    """Board confidence 10 -> probability > 0.3; confidence 80 -> 0.0."""
+
+    def test_sacking_probability_scales(self, cascade_session: Session):
+        # High confidence -> no sacking risk
+        board = cascade_session.query(BoardExpectation).filter_by(club_id=1).first()
+        board.board_confidence = 80.0
+        cascade_session.flush()
+
+        prob_high = ManagerJobSecurity.calculate_sacking_probability(
+            cascade_session, club_id=1, season=1,
+        )
+        assert prob_high == 0.0, f"Should be 0.0 with high confidence, got {prob_high}"
+
+        # Low confidence -> high sacking risk
+        board.board_confidence = 10.0
+        # Set played > 10 to avoid honeymoon halving
+        standing = cascade_session.query(LeagueStanding).filter_by(club_id=1, season=1).first()
+        standing.played = 15
+        cascade_session.flush()
+
+        prob_low = ManagerJobSecurity.calculate_sacking_probability(
+            cascade_session, club_id=1, season=1,
+        )
+        assert prob_low > 0.3, f"Should be > 0.3 with confidence 10, got {prob_low}"
+
+
+class TestUnderdogNarrativeDetection:
+    """Club 10 positions above expectation -> narrative detected."""
+
+    def test_underdog_narrative_detection(self, cascade_session: Session):
+        # Set board expectation to mid-table (position ~15)
+        board = cascade_session.query(BoardExpectation).filter_by(club_id=1).first()
+        board.min_league_position = 10
+        board.max_league_position = 20  # expected ~15th
+
+        # Create league standings where club is 1st (position 1, expected 15)
+        standing = cascade_session.query(LeagueStanding).filter_by(
+            club_id=1, season=1,
+        ).first()
+        standing.points = 30
+
+        # Create other clubs' standings so position calculation works
+        for i in range(2, 21):
+            other_club = Club(id=i, name=f"Club {i}", league_id=1)
+            cascade_session.add(other_club)
+            other_standing = LeagueStanding(
+                league_id=1, club_id=i, season=1,
+                played=10, points=30 - i,  # all behind
+                goal_difference=0,
+            )
+            cascade_session.add(other_standing)
+        cascade_session.flush()
+
+        narratives = CascadingNarrativeEngine.detect_narratives(
+            cascade_session, club_id=1, season=1, matchday=10,
+        )
+
+        assert "underdog_run" in narratives, (
+            f"Should detect underdog_run narrative, got: {narratives}"
+        )
+
+
+class TestRedemptionArc:
+    """'LLLWWW' form -> redemption narrative triggers morale boost."""
+
+    def test_redemption_arc(self, cascade_session: Session):
+        standing = cascade_session.query(LeagueStanding).filter_by(
+            club_id=1, season=1,
+        ).first()
+        standing.form = "LLLWWW"
+        cascade_session.flush()
+
+        # Record initial morale
+        p1 = cascade_session.get(Player, 1)
+        initial_morale = p1.morale
+
+        narratives = CascadingNarrativeEngine.detect_narratives(
+            cascade_session, club_id=1, season=1, matchday=10,
+        )
+        cascade_session.flush()
+
+        assert "redemption_arc" in narratives, (
+            f"Should detect redemption_arc narrative, got: {narratives}"
+        )
+
+        p1 = cascade_session.get(Player, 1)
+        assert p1.morale > initial_morale, (
+            f"Morale should increase from redemption arc: {p1.morale} vs {initial_morale}"
         )

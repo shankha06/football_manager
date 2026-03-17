@@ -30,6 +30,7 @@ from fm.world.cup import DomesticCup
 from fm.world.continental import ContinentalManager
 from fm.world.dynamics import DynamicsManager
 from fm.world.news_engine import NarrativeEngine
+from fm.core.consequence_engine import ConsequenceEngine
 
 
 # ── Transfer window schedule (matchday ranges) ────────────────────────────
@@ -613,6 +614,32 @@ class SeasonManager:
         #    we also want per-player form updates)
         self._update_player_form(fixture, result)
 
+        # 6. Cascading consequences (form spiral, narratives, sacking check)
+        ce = ConsequenceEngine(self.session)
+        season_obj = self.get_current_season()
+        for club_id, my_g, their_g in [
+            (fixture.home_club_id, hg, ag),
+            (fixture.away_club_id, ag, hg),
+        ]:
+            if my_g > their_g:
+                res_char = "W"
+            elif my_g < their_g:
+                res_char = "L"
+            else:
+                res_char = "D"
+            human_season = self.session.query(Season).filter(
+                Season.year == season_obj.year
+            ).first()
+            is_human = (
+                human_season is not None
+                and human_season.human_club_id == club_id
+            )
+            ce.process_post_match(
+                club_id, res_char, season_obj.year,
+                season_obj.current_matchday + 1,
+                is_human=is_human,
+            )
+
     def _update_post_match_morale(self, fixture: Fixture):
         """Adjust player morale based on match result using MoraleManager."""
         hg = fixture.home_goals or 0
@@ -1031,6 +1058,13 @@ class SeasonManager:
                              f"and will be out for {p.injured_weeks} week(s).",
                         category="injury",
                     ))
+
+        # 12. Cascading weekly consequences (dressing room, finances, etc.)
+        cascade_engine = ConsequenceEngine(self.session)
+        for club in clubs:
+            cascade_engine.process_weekly(
+                club.id, season.year, season.current_matchday,
+            )
 
         self.session.flush()
 

@@ -23,6 +23,15 @@ CONTRACT_EXPIRED = "contract_expired"
 BOARD_WARNING = "board_warning"
 TEAM_TALK = "team_talk"
 
+# ── Cascading consequence event types ────────────────────────────────────
+LOSING_STREAK = "losing_streak"
+WINNING_STREAK = "winning_streak"
+DRESSING_ROOM_TENSION = "dressing_room_tension"
+MEDICAL_CRISIS = "medical_crisis"
+FINANCIAL_CRISIS = "financial_crisis"
+MANAGER_SACKED = "manager_sacked"
+NARRATIVE_TRIGGERED = "narrative_triggered"
+
 
 @dataclass(order=True)
 class _Subscription:

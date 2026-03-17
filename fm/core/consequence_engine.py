@@ -14,6 +14,7 @@ from fm.core.event_bus import (
     MATCH_STATS,
     OVERTRAINING,
     PLAYER_DROPPED,
+    PLAYER_INJURED,
     PLAYER_SOLD,
     PROMISE_BROKEN,
     YOUTH_PLAYED,
@@ -22,9 +23,18 @@ from fm.db.models import (
     BoardExpectation,
     Club,
     ConsequenceLog,
+    LeagueStanding,
     Player,
     PlayerRelationship,
     Promise,
+)
+from fm.core.cascading_consequences import (
+    CascadingNarrativeEngine,
+    DressingRoomPolitics,
+    FinancialPressure,
+    FormSpiral,
+    InjuryCascade,
+    ManagerJobSecurity,
 )
 from fm.utils.helpers import clamp
 
@@ -46,8 +56,80 @@ class ConsequenceEngine:
         bus.subscribe(YOUTH_PLAYED, self._handle_youth_played)
         bus.subscribe(FINANCIAL_OVERSPEND, self._handle_financial_overspend)
         bus.subscribe(CAPTAIN_INJURED, self._handle_captain_injured)
+        bus.subscribe(PLAYER_INJURED, self._handle_player_injured)
         bus.subscribe(MATCH_RESULT, self._handle_match_result)
         bus.subscribe(MATCH_STATS, self._handle_poor_performance)
+
+    # ── Cascading consequence orchestration ──────────────────────────────
+
+    def process_post_match(
+        self, club_id: int, result: str, season: int, matchday: int,
+        is_human: bool = False,
+    ) -> list[str]:
+        """Run after each match for *club_id*.
+
+        Delegates to :class:`FormSpiral`, :class:`CascadingNarrativeEngine`,
+        and :class:`ManagerJobSecurity`.
+
+        *result* should be ``'W'``, ``'D'``, or ``'L'``.
+        Returns a list of effect descriptions.
+        """
+        effects: list[str] = []
+
+        # 1. Form spiral / streak processing
+        effects.extend(
+            FormSpiral.process_streak(self._session, club_id, result, matchday, season)
+        )
+
+        # 2. Narrative detection and news generation
+        narratives = CascadingNarrativeEngine.detect_narratives(
+            self._session, club_id, season, matchday,
+        )
+        if narratives:
+            CascadingNarrativeEngine.generate_matchday_news(
+                self._session, club_id, season, matchday, narratives,
+            )
+            effects.append(f"Narratives: {', '.join(narratives)}")
+
+        # 3. Manager sacking check (AI only)
+        sacked = ManagerJobSecurity.process_sacking_check(
+            self._session, club_id, season, matchday, is_human=is_human,
+        )
+        if sacked:
+            effects.append(f"Manager sacked at club {club_id}")
+
+        return effects
+
+    def process_weekly(self, club_id: int, season: int, matchday: int = 0) -> list[str]:
+        """Run during weekly processing for *club_id*.
+
+        Delegates to :class:`DressingRoomPolitics`, :class:`FinancialPressure`,
+        and :class:`ManagerJobSecurity`.
+
+        Returns a list of effect descriptions.
+        """
+        effects: list[str] = []
+
+        # 1. Dressing room politics
+        state = DressingRoomPolitics.process_squad_harmony(
+            self._session, club_id, season, matchday,
+        )
+        if state != "calm":
+            effects.append(f"Dressing room: {state}")
+
+        # 2. Clique dynamics
+        clique_effects = DressingRoomPolitics.process_clique_dynamics(
+            self._session, club_id, season, matchday,
+        )
+        effects.extend(clique_effects)
+
+        # 3. Financial pressure
+        fin_effects = FinancialPressure.process_financial_state(
+            self._session, club_id, season, matchday,
+        )
+        effects.extend(fin_effects)
+
+        return effects
 
     # ── Handlers ──────────────────────────────────────────────────────────
 
@@ -285,6 +367,22 @@ class ConsequenceEngine:
             target_id=club_id,
             effect=f"Captain {name} injured — team spirit -{8}, squad morale hit",
             magnitude=-8.0,
+        )
+
+    def _handle_player_injured(self, _event_type: str, **data) -> None:
+        """A player was injured — trigger injury cascade effects.
+
+        Expected *data*: player_id, club_id, injury_type, severity,
+                         matchday, season.
+        """
+        InjuryCascade.process_injury_impact(
+            self._session,
+            club_id=data["club_id"],
+            injured_player_id=data["player_id"],
+            injury_type=data.get("injury_type", "unknown"),
+            severity=data.get("severity", "moderate"),
+            season=data["season"],
+            matchday=data["matchday"],
         )
 
     def _handle_match_result(self, _event_type: str, **data) -> None:
