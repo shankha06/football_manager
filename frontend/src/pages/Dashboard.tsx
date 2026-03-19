@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { motion } from 'framer-motion';
@@ -7,11 +7,14 @@ import {
   Swords, ShieldAlert, Users, Activity, ChevronRight,
   Lock, Unlock, ArrowRightLeft,
 } from 'lucide-react';
+import ClubBadge from '../components/common/ClubBadge';
+import { LeagueLogo } from '../components/LeagueLogo';
+import { getNextFixture, type NextFixture } from '../api/client';
 
 const fadeUp = {
-  initial: { opacity: 0, y: 12 },
+  initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, ease: 'easeOut' },
+  transition: { duration: 0.5 }
 };
 
 export default function Dashboard() {
@@ -21,6 +24,8 @@ export default function Dashboard() {
   } = useStore();
   const navigate = useNavigate();
 
+  const [nextFixture, setNextFixture] = useState<NextFixture | null>(null);
+
   useEffect(() => {
     fetchClub();
     fetchBoard();
@@ -28,6 +33,7 @@ export default function Dashboard() {
     fetchStandings();
     fetchNews();
     fetchSquad();
+    getNextFixture().then(setNextFixture).catch(() => { });
   }, []);
 
   const ourStanding = standings.find(s => s.club_id === club?.id);
@@ -59,10 +65,17 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{club?.name ?? 'Loading...'}</h1>
-          <p className="text-sm text-[var(--fm-text-muted)]">
+          <div className="flex items-center gap-2 text-sm text-[var(--fm-text-muted)]">
+            {club && (
+              <LeagueLogo
+                leagueId={club.league_name === 'Premier League' ? 1 : club.league_name === 'La Liga' ? 7 : club.league_name === 'Bundesliga' ? 12 : club.league_name === 'Serie A' ? 15 : club.league_name === 'Ligue 1' ? 20 : 1}
+                leagueName={club.league_name}
+                size={16}
+              />
+            )}
             {club?.league_name}
             {seasonState && <> &middot; Season {seasonState.season}, Matchday {seasonState.current_matchday}</>}
-          </p>
+          </div>
         </div>
         <button
           onClick={() => navigate('/match')}
@@ -96,14 +109,15 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-3">
-                  <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-lg"
-                    style={{ backgroundColor: club?.primary_color || 'var(--fm-accent)' }}
-                  >
-                    {club?.short_name?.slice(0, 3) ?? club?.name?.slice(0, 3) ?? '---'}
-                  </div>
+                  <ClubBadge
+                    clubId={nextFixture ? nextFixture.home_club_id : club?.id}
+                    name={nextFixture ? nextFixture.home_club : (club?.name ?? 'Home')}
+                    shortName={nextFixture?.is_home ? club?.short_name : undefined}
+                    primaryColor={nextFixture?.is_home ? club?.primary_color : undefined}
+                    size={48}
+                  />
                   <div>
-                    <p className="font-semibold text-sm">{club?.name ?? '---'}</p>
+                    <p className="font-semibold text-sm">{nextFixture ? nextFixture.home_club : (club?.name ?? '---')}</p>
                     <p className="text-[10px] text-[var(--fm-text-muted)]">Home</p>
                   </div>
                 </div>
@@ -114,12 +128,16 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <p className="font-semibold text-sm text-[var(--fm-text-muted)]">Opponent</p>
+                    <p className="font-semibold text-sm">{nextFixture ? nextFixture.away_club : 'Opponent'}</p>
                     <p className="text-[10px] text-[var(--fm-text-muted)]">Away</p>
                   </div>
-                  <div className="w-12 h-12 rounded-lg bg-[var(--fm-surface2)] flex items-center justify-center shadow-lg">
-                    <Swords size={18} className="text-[var(--fm-text-muted)]" />
-                  </div>
+                  <ClubBadge
+                    clubId={nextFixture ? nextFixture.away_club_id : undefined}
+                    name={nextFixture ? nextFixture.away_club : 'Away'}
+                    shortName={!nextFixture?.is_home ? club?.short_name : undefined}
+                    primaryColor={!nextFixture?.is_home ? club?.primary_color : undefined}
+                    size={48}
+                  />
                 </div>
               </div>
               <div className="flex items-center justify-center mt-1 pt-2 border-t border-[var(--fm-border)]">
@@ -144,11 +162,10 @@ export default function Dashboard() {
                   {ourStanding.form.split('').map((r, i) => (
                     <div
                       key={i}
-                      className={`w-9 h-9 flex items-center justify-center rounded-lg text-xs font-bold ${
-                        r === 'W' ? 'bg-[var(--fm-green)]/15 text-[var(--fm-green)] border border-[var(--fm-green)]/25' :
+                      className={`w-9 h-9 flex items-center justify-center rounded-lg text-xs font-bold ${r === 'W' ? 'bg-[var(--fm-green)]/15 text-[var(--fm-green)] border border-[var(--fm-green)]/25' :
                         r === 'D' ? 'bg-[var(--fm-yellow)]/15 text-[var(--fm-yellow)] border border-[var(--fm-yellow)]/25' :
-                        'bg-[var(--fm-red)]/15 text-[var(--fm-red)] border border-[var(--fm-red)]/25'
-                      }`}
+                          'bg-[var(--fm-red)]/15 text-[var(--fm-red)] border border-[var(--fm-red)]/25'
+                        }`}
                     >
                       {r}
                     </div>
@@ -465,11 +482,10 @@ export default function Dashboard() {
               {news.slice(0, 5).map(n => (
                 <div
                   key={n.id}
-                  className={`p-3 rounded-lg border text-xs cursor-pointer hover:border-[var(--fm-accent)] transition-all ${
-                    !n.is_read
-                      ? 'border-[var(--fm-accent)]/30 bg-[var(--fm-accent)]/5 unread-glow'
-                      : 'border-[var(--fm-border)] bg-[var(--fm-surface2)]'
-                  }`}
+                  className={`p-3 rounded-lg border text-xs cursor-pointer hover:border-[var(--fm-accent)] transition-all ${!n.is_read
+                    ? 'border-[var(--fm-accent)]/30 bg-[var(--fm-accent)]/5 unread-glow'
+                    : 'border-[var(--fm-border)] bg-[var(--fm-surface2)]'
+                    }`}
                   onClick={() => navigate('/news')}
                 >
                   <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase mb-1.5 ${getCategoryStyle(n.category)}`}>

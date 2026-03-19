@@ -3,7 +3,23 @@
     "allow": [
       "Bash(find /media/roy/WDBlue/Codes/football_manager/fm -name \"*.py\" -type f -exec grep -h \"^import\\\\|^from\" {})",
       "Bash(find /media/roy/WDBlue/Codes/football_manager/fm -name \"*.py\" -type f -exec grep -oh \"^\\\\\\(import\\\\|from\\\\\\) [a-zA-Z_][a-zA-Z0-9_]*\" {})",
-      "Bash(grep -h \"kagglehub\\\\|uvicorn\\\\|websockets\\\\|httpx\\\\|cupy\" /media/roy/WDBlue/Codes/football_manager/fm/**/*.py)"
+      "Bash(grep -h \"kagglehub\\\\|uvicorn\\\\|websockets\\\\|httpx\\\\|cupy\" /media/roy/WDBlue/Codes/football_manager/fm/**/*.py)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(/tmp/findings.txt:*)",
+      "Read(//tmp/**)",
+      "Bash(uv run:*)",
+      "Bash(grep:*)",
+      "Bash(npm install:*)",
+      "Bash(cd:*)",
+      "Bash(npm info:*)",
+      "Bash(find /media/roy/WDBlue/Codes/football_manager -type f \\\\\\(-iname *.png -o -iname *.jpg -o -iname *.jpeg -o -iname *.svg -o -iname *.gif \\\\\\))",
+      "Bash(find /media/roy/WDBlue/Codes/football_manager -name *.csv -not -path */node_modules/* -not -path */.venv/* -not -path */__pycache__/*)",
+      "Bash(npx tsc:*)",
+      "Bash(ls saves/*.db)",
+      "Bash(ls *.db)",
+      "Bash(find /media/roy/WDBlue/Codes/football_manager -path */assets/clubs*)",
+      "Bash(wc -l /media/roy/WDBlue/Codes/football_manager/fm/**/*.py)",
+      "Bash(curl -s \"https://en.wikipedia.org/wiki/Expected_goals\")"
     ]
   }
 }

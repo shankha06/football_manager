@@ -169,6 +169,10 @@ class Player(Base):
     wage = Column(Float, default=0.0)                      # weekly wage EUR
     market_value = Column(Float, default=0.0)              # millions EUR
 
+    # ── Loan tracking ──
+    is_loan = Column(Boolean, default=False)
+    loan_from_club_id = Column(Integer, ForeignKey("clubs.id"), nullable=True)
+
     # ── Overall ──
     overall = Column(Integer, default=50)
     potential = Column(Integer, default=50)

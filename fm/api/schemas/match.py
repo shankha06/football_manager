@@ -19,6 +19,8 @@ class MatchResult(BaseModel):
     fixture_id: int
     home_club: str
     away_club: str
+    home_club_id: int
+    away_club_id: int
     home_goals: int
     away_goals: int
     home_xg: float | None = None
@@ -84,6 +86,8 @@ class MatchAnalytics(BaseModel):
     fixture_id: int
     home_club: str
     away_club: str
+    home_club_id: int
+    away_club_id: int
     xg_timeline: list[XGTimelinePoint] = []
     home_xg: float | None = None
     away_xg: float | None = None

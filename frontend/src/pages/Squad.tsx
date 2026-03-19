@@ -7,6 +7,7 @@ import {
   Shield, Check, ChevronRight, X,
 } from 'lucide-react';
 import type { PlayerDetail } from '../types';
+import ClubBadge from '../components/common/ClubBadge';
 
 type SortKey = 'name' | 'position' | 'overall' | 'age' | 'fitness' | 'morale' | 'form';
 
@@ -117,11 +118,10 @@ export default function Squad() {
             <button
               key={g}
               onClick={() => setPosGroup(g)}
-              className={`px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                posGroup === g
-                  ? 'bg-[var(--fm-accent)] text-white'
-                  : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] hover:bg-[var(--fm-surface2)]'
-              }`}
+              className={`px-3.5 py-1.5 text-xs font-semibold transition-all ${posGroup === g
+                ? 'bg-[var(--fm-accent)] text-white'
+                : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] hover:bg-[var(--fm-surface2)]'
+                }`}
             >
               {g}
             </button>
@@ -251,90 +251,107 @@ function PlayerPanel({ player: p, onClose, onViewFull }: { player: PlayerDetail;
   const pc = posColors[p.position] ?? { bg: 'bg-gray-500/15', text: 'text-gray-400' };
 
   return (
-    <div className="p-5">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-5">
-        <div className="flex items-start gap-3">
-          <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white text-xl font-bold ${ovrColor(p.overall)}`}>
-            {p.overall}
+    <div className="p-0">
+      {/* Header with Club Background */}
+      <div className="p-5 relative overflow-hidden bg-[var(--fm-surface2)]">
+        {p.club_id && (
+          <div className="absolute -right-8 -top-8 opacity-10 rotate-12 pointer-events-none">
+            <ClubBadge clubId={p.club_id} name={p.club_name ?? ''} size={160} className="bg-transparent border-none shadow-none" />
           </div>
-          <div>
-            <h2 className="text-lg font-bold leading-tight">{p.name}</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${pc.bg} ${pc.text}`}>{p.position}</span>
-              <span className="text-xs text-[var(--fm-text-muted)]">Age {p.age}</span>
-              {p.nationality && <span className="text-xs text-[var(--fm-text-muted)]">{p.nationality}</span>}
+        )}
+
+        <div className="flex items-start justify-between relative z-10">
+          <div className="flex items-start gap-3">
+            <div className="relative">
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white text-xl font-bold shadow-lg ${ovrColor(p.overall)}`}>
+                {p.overall}
+              </div>
+              {p.club_id && (
+                <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm border border-gray-100">
+                  <ClubBadge clubId={p.club_id} name={p.club_name ?? ''} size={20} />
+                </div>
+              )}
             </div>
-            <p className="text-[10px] text-[var(--fm-text-muted)] mt-0.5">Potential: {p.potential}</p>
+            <div>
+              <h2 className="text-lg font-bold leading-tight">{p.name}</h2>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${pc.bg} ${pc.text}`}>{p.position}</span>
+                <span className="text-xs text-[var(--fm-text-muted)]">Age {p.age}</span>
+                {p.nationality && <span className="text-xs text-[var(--fm-text-muted)]">{p.nationality}</span>}
+              </div>
+              <p className="text-[10px] text-[var(--fm-text-muted)] mt-0.5">{p.club_name} &middot; Potential: {p.potential}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--fm-surface)]/50 transition-colors">
+            <X size={18} className="text-[var(--fm-text-muted)]" />
+          </button>
+        </div>
+      </div>
+
+      <div className="p-5">
+        {/* Status bars */}
+        <div className="grid grid-cols-2 gap-2.5 mb-5">
+          <MiniStatBar label="Fitness" value={p.fitness} icon={Zap} />
+          <MiniStatBar label="Morale" value={p.morale} icon={Heart} />
+          <MiniStatBar label="Form" value={p.form} icon={Star} />
+          <MiniStatBar label="Trust" value={p.trust_in_manager} icon={Heart} />
+        </div>
+
+        {/* Radar Chart */}
+        <div className="mb-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--fm-text-muted)] mb-2">Attributes</h3>
+          <div className="flex justify-center bg-[var(--fm-surface2)] rounded-xl py-3">
+            <RadarChart
+              data={[
+                { label: 'PAC', value: p.pace },
+                { label: 'SHO', value: p.shooting },
+                { label: 'PAS', value: p.passing },
+                { label: 'DRI', value: p.dribbling },
+                { label: 'DEF', value: p.defending },
+                { label: 'PHY', value: p.physical },
+              ]}
+              size={200}
+            />
           </div>
         </div>
-        <button onClick={onClose} className="p-1 rounded hover:bg-[var(--fm-surface2)]">
-          <X size={18} className="text-[var(--fm-text-muted)]" />
+
+        {/* Season Stats */}
+        <div className="mb-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--fm-text-muted)] mb-2">Season Stats</h3>
+          <div className="grid grid-cols-3 gap-2">
+            <StatCard label="Goals" value={p.goals_season} />
+            <StatCard label="Assists" value={p.assists_season} />
+            <StatCard label="Minutes" value={p.minutes_season} />
+          </div>
+        </div>
+
+        {/* Contract info */}
+        <div className="mb-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--fm-text-muted)] mb-2">Contract</h3>
+          <div className="grid grid-cols-2 gap-y-2 text-xs bg-[var(--fm-surface2)] rounded-lg p-3">
+            <span className="text-[var(--fm-text-muted)]">Value</span>
+            <span className="font-semibold text-right">{formatMoney(p.market_value)}</span>
+            <span className="text-[var(--fm-text-muted)]">Wage</span>
+            <span className="font-semibold text-right">{formatMoney(p.wage)}/w</span>
+            <span className="text-[var(--fm-text-muted)]">Expires</span>
+            <span className="font-semibold text-right">Season {p.contract_expiry}</span>
+            <span className="text-[var(--fm-text-muted)]">Role</span>
+            <span className="font-semibold text-right capitalize">{p.squad_role.replace('_', ' ')}</span>
+          </div>
+        </div>
+
+        <button
+          onClick={onViewFull}
+          className="w-full py-2.5 rounded-lg bg-[var(--fm-accent)] text-white text-sm font-semibold hover:brightness-110 flex items-center justify-center gap-2"
+        >
+          View Full Profile <ChevronRight size={14} />
         </button>
       </div>
-
-      {/* Status bars */}
-      <div className="grid grid-cols-2 gap-2.5 mb-5">
-        <MiniStatBar label="Fitness" value={p.fitness} icon={Zap} />
-        <MiniStatBar label="Morale" value={p.morale} icon={Heart} />
-        <MiniStatBar label="Form" value={p.form} icon={Star} />
-        <MiniStatBar label="Trust" value={p.trust_in_manager} icon={Heart} />
-      </div>
-
-      {/* Radar Chart */}
-      <div className="mb-5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--fm-text-muted)] mb-2">Attributes</h3>
-        <div className="flex justify-center bg-[var(--fm-surface2)] rounded-xl py-3">
-          <RadarChart
-            data={[
-              { label: 'PAC', value: p.pace },
-              { label: 'SHO', value: p.shooting },
-              { label: 'PAS', value: p.passing },
-              { label: 'DRI', value: p.dribbling },
-              { label: 'DEF', value: p.defending },
-              { label: 'PHY', value: p.physical },
-            ]}
-            size={200}
-          />
-        </div>
-      </div>
-
-      {/* Season Stats */}
-      <div className="mb-5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--fm-text-muted)] mb-2">Season Stats</h3>
-        <div className="grid grid-cols-3 gap-2">
-          <StatCard label="Goals" value={p.goals_season} />
-          <StatCard label="Assists" value={p.assists_season} />
-          <StatCard label="Minutes" value={p.minutes_season} />
-        </div>
-      </div>
-
-      {/* Contract info */}
-      <div className="mb-5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--fm-text-muted)] mb-2">Contract</h3>
-        <div className="grid grid-cols-2 gap-y-2 text-xs bg-[var(--fm-surface2)] rounded-lg p-3">
-          <span className="text-[var(--fm-text-muted)]">Value</span>
-          <span className="font-semibold text-right">{formatMoney(p.market_value)}</span>
-          <span className="text-[var(--fm-text-muted)]">Wage</span>
-          <span className="font-semibold text-right">{formatMoney(p.wage)}/w</span>
-          <span className="text-[var(--fm-text-muted)]">Expires</span>
-          <span className="font-semibold text-right">Season {p.contract_expiry}</span>
-          <span className="text-[var(--fm-text-muted)]">Role</span>
-          <span className="font-semibold text-right capitalize">{p.squad_role.replace('_', ' ')}</span>
-        </div>
-      </div>
-
-      <button
-        onClick={onViewFull}
-        className="w-full py-2.5 rounded-lg bg-[var(--fm-accent)] text-white text-sm font-semibold hover:brightness-110 flex items-center justify-center gap-2"
-      >
-        View Full Profile <ChevronRight size={14} />
-      </button>
     </div>
   );
 }
 
-function MiniStatBar({ label, value, icon: Icon }: { label: string; value: number; icon: React.ElementType }) {
+function MiniStatBar({ label, value, icon: Icon }: { label: string; value: number; icon: any }) {
   const color = value > 75 ? 'var(--fm-green)' : value > 50 ? 'var(--fm-yellow)' : 'var(--fm-red)';
   return (
     <div className="p-2.5 rounded-lg bg-[var(--fm-surface2)]">

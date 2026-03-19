@@ -4,6 +4,7 @@ import { Plus, Trash2, Play, Loader2, ArrowLeft, Search, Star, ChevronDown, Chev
 import type { SaveGame } from '../types';
 import * as api from '../api/client';
 import type { LeagueWithClubs, IngestResult } from '../api/client';
+import ClubBadge from '../components/common/ClubBadge';
 
 type Step = 'menu' | 'setup' | 'loading' | 'select_club' | 'confirm';
 
@@ -27,7 +28,7 @@ export default function SaveManager() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.listSaves().then(setSaves).catch(() => {});
+    api.listSaves().then(setSaves).catch(() => { });
   }, []);
 
   // ── Step: Loading data ──
@@ -92,7 +93,7 @@ export default function SaveManager() {
   const tiers = [...new Set(leagues.map(l => l.tier))].sort();
 
   const handleLoad = (save: SaveGame) => {
-    api.loadSave(save.id).catch(() => {});
+    api.loadSave(save.id).catch(() => { });
     navigate('/dashboard');
   };
 
@@ -270,13 +271,17 @@ export default function SaveManager() {
                               <tr
                                 key={club.id}
                                 onClick={() => { setSelectedClub(club); setSelectedLeagueName(league.name); }}
-                                className={`cursor-pointer border-t border-[var(--fm-border)] transition-colors ${
-                                  isSelected
+                                className={`cursor-pointer border-t border-[var(--fm-border)] transition-colors ${isSelected
                                     ? 'bg-[var(--fm-accent)]/15 border-l-2 border-l-[var(--fm-accent)]'
                                     : 'hover:bg-[var(--fm-surface2)]'
-                                }`}
+                                  }`}
                               >
-                                <td className="px-4 py-2.5 font-medium">{club.name}</td>
+                                <td className="px-4 py-2.5 font-medium">
+                                  <div className="flex items-center gap-2">
+                                    <ClubBadge clubId={club.id} name={club.name} size={24} />
+                                    <span>{club.name}</span>
+                                  </div>
+                                </td>
                                 <td className="px-4 py-2.5">
                                   <div className="flex items-center justify-center gap-0.5">{starRating(club.reputation)}</div>
                                 </td>

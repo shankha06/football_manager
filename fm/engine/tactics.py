@@ -193,6 +193,9 @@ class TacticalContext:
     match_plan_losing: str = "push_forward"
     match_plan_drawing: str = "stay_balanced"
 
+    # ── Mid-match formation lock (prevents repeated switches) ──
+    formation_locked: bool = False
+
     @property
     def risk_modifier(self) -> float:
         return MENTALITY_RISK.get(self.mentality, 0.0)

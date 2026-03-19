@@ -113,11 +113,15 @@ export interface MatchResult {
   fixture_id: number;
   home_club: string;
   away_club: string;
+  home_club_id: number;
+  away_club_id: number;
+  xg_timeline?: XGDataPoint[];
   home_goals: number;
   away_goals: number;
   home_xg?: number | null;
   away_xg?: number | null;
   home_possession?: number | null;
+  away_possession?: number | null;
   home_shots?: number | null;
   home_shots_on_target?: number | null;
   away_shots?: number | null;
@@ -238,7 +242,7 @@ export interface XGDataPoint {
 
 // Live match WebSocket messages
 export interface WSMessage {
-  type: 'commentary' | 'goal' | 'stats_update' | 'match_end' | 'card' | 'substitution';
+  type: 'commentary' | 'goal' | 'stats_update' | 'match_end' | 'card' | 'substitution' | 'match_start';
   minute?: number;
   text?: string;
   data?: Record<string, unknown>;

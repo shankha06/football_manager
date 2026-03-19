@@ -270,8 +270,31 @@ class SeasonManager:
             season=season.year, matchday=next_md, played=False
         ).all()
 
+        # If next_md is already fully played (e.g. from batch sim or cups),
+        # skip forward to the first matchday that still has unplayed fixtures.
         if not all_fixtures:
-            return {"matchday": next_md, "matches": 0, "human_result": None}
+            next_unplayed = (
+                self.session.query(Fixture)
+                .filter(
+                    Fixture.season == season.year,
+                    Fixture.matchday > season.current_matchday,
+                    Fixture.played == False,
+                )
+                .order_by(Fixture.matchday.asc())
+                .first()
+            )
+            if next_unplayed:
+                # Advance matchday counter to catch up, then process that matchday
+                next_md = next_unplayed.matchday
+                # Bump past any fully-played matchdays
+                season.current_matchday = next_md - 1
+                self.session.flush()
+                all_fixtures = self.session.query(Fixture).filter_by(
+                    season=season.year, matchday=next_md, played=False
+                ).all()
+            else:
+                # Season is truly over — no unplayed fixtures remain
+                return {"matchday": next_md, "matches": 0, "human_result": None}
 
         # ── 1. Weekly processing (between matchdays) ──────────────────────
         self._process_weekly(season, human_club_id)
@@ -500,10 +523,12 @@ class SeasonManager:
 
         # Build match context with all pre-match factors
         season = self.get_current_season()
+        next_md = season.current_matchday + 1
         match_context = build_match_context(
             self.session, home_club, away_club,
             home_tactics=h_tac, away_tactics=a_tac,
             season=season,
+            matchday=next_md,
         )
 
         result = self.match_sim.simulate(
@@ -617,6 +642,7 @@ class SeasonManager:
         # 6. Cascading consequences (form spiral, narratives, sacking check)
         ce = ConsequenceEngine(self.session)
         season_obj = self.get_current_season()
+        next_md = season_obj.current_matchday + 1
         for club_id, my_g, their_g in [
             (fixture.home_club_id, hg, ag),
             (fixture.away_club_id, ag, hg),
@@ -636,9 +662,40 @@ class SeasonManager:
             )
             ce.process_post_match(
                 club_id, res_char, season_obj.year,
-                season_obj.current_matchday + 1,
+                next_md,
                 is_human=is_human,
             )
+
+        # 7. Goal drought detection for strikers
+        from fm.core.match_situations import MatchSituationEngine
+        for club_id, my_g in [(fixture.home_club_id, hg), (fixture.away_club_id, ag)]:
+            if my_g == 0:
+                # Check recent fixtures for this club
+                recent = self.session.query(Fixture).filter(
+                    Fixture.season == season_obj.year,
+                    Fixture.played == True,
+                    (Fixture.home_club_id == club_id) | (Fixture.away_club_id == club_id),
+                ).order_by(Fixture.matchday.desc()).limit(6).all()
+                scoreless_run = 0
+                for rf in recent:
+                    g = rf.home_goals if rf.home_club_id == club_id else rf.away_goals
+                    if (g or 0) == 0:
+                        scoreless_run += 1
+                    else:
+                        break
+                if scoreless_run >= 5:
+                    # Find the top striker
+                    strikers = self.session.query(Player).filter(
+                        Player.club_id == club_id,
+                        Player.position.in_(["ST", "CF", "LW", "RW"]),
+                    ).order_by(Player.overall.desc()).first()
+                    if strikers:
+                        MatchSituationEngine.handle_goal_drought(
+                            session=self.session, club_id=club_id,
+                            player_id=strikers.id,
+                            matches_without_goal=scoreless_run,
+                            season=season_obj.year, matchday=next_md,
+                        )
 
     def _update_post_match_morale(self, fixture: Fixture):
         """Adjust player morale based on match result using MoraleManager."""
@@ -1183,7 +1240,7 @@ class SeasonManager:
 
         for p in players:
             age = p.age or 25
-            if age > 21:
+            if age > 23:
                 continue
 
             potential_gap = (p.potential or 50) - (p.overall or 50)
@@ -1924,12 +1981,22 @@ class SeasonManager:
         """Start a new season: reset standings, generate fixtures, age players."""
         from fm.world.player_development import age_all_players
         from fm.db.ingestion import _generate_all_fixtures, _init_standings
+        from fm.world.youth_academy import YouthAcademyManager
 
         old_season = self.get_current_season()
         new_year = old_season.year + 1
 
         # Age players
         age_all_players(self.session)
+
+        # Age youth candidates and process end-of-season youth tasks
+        ya = YouthAcademyManager(self.session)
+        ya.process_end_of_loan_returns(new_year)
+        all_clubs = self.session.query(Club).all()
+        for club in all_clubs:
+            ya.age_candidates(club.id)
+            ya.auto_promote_for_ai(club.id, new_year)
+            ya.update_squad_roles(club.id)
 
         # Create new season
         new_season = Season(

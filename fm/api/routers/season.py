@@ -154,6 +154,8 @@ def _fixture_to_match_result(session: Session, fixture: Fixture) -> MatchResult:
         fixture_id=fixture.id,
         home_club=home_club.name if home_club else "Unknown",
         away_club=away_club.name if away_club else "Unknown",
+        home_club_id=fixture.home_club_id,
+        away_club_id=fixture.away_club_id,
         home_goals=fixture.home_goals or 0,
         away_goals=fixture.away_goals or 0,
         home_xg=fixture.home_xg,

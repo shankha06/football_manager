@@ -277,7 +277,7 @@ class MatchSituationEngine:
             defender.trust_in_manager = clamp(defender.trust_in_manager - 3, 0, 100)  # Confidence in tactics
 
         # LONG-TERM: Transfer implications if repeated
-        gk.discipline = clamp(gk.discipline - 5, 0, 100)  # Reputation suffering
+        gk.composure = clamp((gk.composure or 50) - 5, 0, 100)  # Composure suffering
 
         session.add(NewsItem(
             season=season, matchday=matchday,
@@ -436,7 +436,7 @@ class MatchSituationEngine:
         # LONG-TERM: Narrative arc of resilience, manager reputation boost
         tac = session.query(TacticalSetup).filter_by(club_id=club_id).first()
         if tac:
-            tac.tactical_reputation = clamp((tac.tactical_reputation or 50) + 10, 0, 100)
+            pass  # tactical reputation boost (no column yet)
 
         session.add(NewsItem(
             season=season, matchday=matchday,
@@ -482,7 +482,7 @@ class MatchSituationEngine:
         # LONG-TERM: Tactical reputation boost for manager
         tac = session.query(TacticalSetup).filter_by(club_id=club_id).first()
         if tac:
-            tac.tactical_reputation = clamp((tac.tactical_reputation or 50) + 8, 0, 100)
+            pass  # tactical reputation boost (no column yet)
 
         session.add(NewsItem(
             season=season, matchday=matchday,
@@ -581,7 +581,7 @@ class MatchSituationEngine:
                 teammate.morale = clamp(teammate.morale + 5, 0, 100)
 
         # LONG-TERM: Transfer interest surges
-        player.transfer_interest_level = clamp((player.transfer_interest_level or 30) + 40, 0, 100)
+        player.market_value = (player.market_value or 0) * 1.2
 
         session.add(NewsItem(
             season=season, matchday=matchday,

@@ -21,6 +21,9 @@ class PlayerInMatch:
     zone_col: int = 3
     zone_row: int = 1
 
+    # Player metadata
+    age: int = 25
+
     # Key attributes (copied from DB at match start for fast access)
     overall: int = 50
     pace: int = 50
@@ -72,6 +75,17 @@ class PlayerInMatch:
     red_card: bool = False
     is_gk: bool = False
     is_on_pitch: bool = True
+
+    # ── Warmup curve (peaks at minute 15-20) ──
+    warmup_factor: float = 0.93
+
+    # ── In-match confidence (shifts per positive/negative events) ──
+    match_confidence: float = 0.0  # -0.10 to +0.10
+
+    # ── Overlapping runs ──
+    overlap_active: bool = False
+    base_zone_col: int = 3
+    base_zone_row: int = 1
 
     # ── Roles & Dynamics ──
     role: str = "CB"               # Role name from PlayerRole
@@ -224,12 +238,21 @@ class PlayerInMatch:
             else:
                 big_match_factor = 1.0 + big_match_bonus
 
+        # --- Warmup curve: performance ramps up in first 15-20 min ---
+        warmup = self.warmup_factor  # 0.93 at kickoff → 1.0 by minute 20
+
+        # --- In-match confidence: shifts after goals, assists, errors ---
+        conf_sensitive = attr in (
+            "composure", "finishing", "shooting", "dribbling", "passing", "vision",
+        )
+        confidence_factor = 1.0 + self.match_confidence * (2.0 if conf_sensitive else 0.8)
+
         # --- Combine ---
         result = (
             base * fatigue_factor * morale_factor * form_factor
             * sharpness_factor * cohesion_factor * home_factor
             * weather_factor * self.fitness_mod * consistency_factor
-            * big_match_factor
+            * big_match_factor * warmup * confidence_factor
         )
         return max(result, 1.0)
 
@@ -272,6 +295,7 @@ class PlayerInMatch:
             name=p.short_name or p.name,
             position=p.position,
             side=side,
+            age=p.age or 25,
             overall=p.overall or 50,
             pace=p.pace, acceleration=p.acceleration, sprint_speed=p.sprint_speed,
             shooting=p.shooting, finishing=p.finishing, shot_power=p.shot_power,
@@ -489,6 +513,18 @@ class MatchState:
     commentary: list[str] = field(default_factory=list)
     scorecards: list[Scorecard] = field(default_factory=list)
     current_minute: int = 0
+
+    # ── Gegenpressing ──
+    gegenpress_active: str = ""        # side currently counter-pressing ("home"/"away"/empty)
+    gegenpress_countdown: int = 0      # chain steps remaining for the press
+
+    # ── Red card position tracking (for tactical switches) ──
+    home_red_card_positions: list[str] = field(default_factory=list)
+    away_red_card_positions: list[str] = field(default_factory=list)
+
+    # ── Formation switch tracking ──
+    home_formation_switched: bool = False
+    away_formation_switched: bool = False
 
     @property
     def home_possession_pct(self) -> float:

@@ -97,7 +97,7 @@ ARCHETYPE_PROFILES = {
     "goalkeeper": {"gk_diving": 1.2, "gk_handling": 1.1, "gk_reflexes": 1.1, "gk_positioning": 1.1},
     "sweeper_keeper": {"gk_reflexes": 1.2, "gk_speed": 1.2, "gk_kicking": 1.1, "passing": 0.9, "acceleration": 0.8},
     "central_defender": {"defending": 1.2, "marking": 1.2, "standing_tackle": 1.1, "heading_accuracy": 1.1, "strength": 1.1, "jumping": 1.1},
-    "ball_playing_defender": {"defending": 1.0, "passing": 1.1, "long_passing": 1.1, "vision": 0.9, "composed": 1.0, "ball_control": 0.9},
+    "ball_playing_defender": {"defending": 1.0, "passing": 1.1, "long_passing": 1.1, "vision": 0.9, "composure": 1.0, "ball_control": 0.9},
     "no_nonsense_defender": {"defending": 1.3, "strength": 1.2, "aggression": 1.1, "heading_accuracy": 1.1, "marking": 1.1, "pace": 0.6},
     "full_back": {"pace": 1.1, "acceleration": 1.1, "stamina": 1.2, "defending": 1.0, "crossing": 0.9, "marking": 1.0},
     "wing_back": {"pace": 1.2, "acceleration": 1.2, "stamina": 1.3, "crossing": 1.1, "dribbling": 1.0, "defending": 0.8},
@@ -115,6 +115,21 @@ ARCHETYPE_PROFILES = {
     "poacher": {"finishing": 1.4, "off_the_ball": 1.4, "acceleration": 1.3, "composure": 1.2, "shooting": 1.1, "strength": 0.7},
     "advanced_forward": {"finishing": 1.2, "pace": 1.3, "acceleration": 1.3, "dribbling": 1.1, "stamina": 1.1, "composure": 1.0},
     "pressing_forward": {"stamina": 1.4, "aggression": 1.4, "work_rate": 1.4, "courage": 1.2, "determination": 1.2, "finishing": 0.9},
+    # Additional archetypes from PLAYER_ROLES
+    "libero": {"defending": 1.1, "passing": 1.1, "vision": 1.0, "composure": 1.1, "ball_control": 1.0, "long_passing": 1.0, "pace": 0.8},
+    "defensive_midfielder": {"defending": 1.2, "interceptions": 1.2, "standing_tackle": 1.1, "positioning": 1.1, "strength": 1.0, "stamina": 1.0},
+    "ball_winning_midfielder": {"standing_tackle": 1.3, "aggression": 1.3, "interceptions": 1.2, "stamina": 1.2, "strength": 1.1, "defending": 1.1},
+    "half_back": {"defending": 1.2, "positioning": 1.3, "interceptions": 1.2, "composure": 1.1, "marking": 1.1, "passing": 0.8},
+    "central_midfielder": {"passing": 1.1, "short_passing": 1.1, "stamina": 1.1, "vision": 1.0, "ball_control": 1.0, "positioning": 1.0},
+    "deep_lying_playmaker": {"passing": 1.3, "vision": 1.3, "long_passing": 1.2, "composure": 1.1, "ball_control": 1.1, "defending": 0.7},
+    "carrilero": {"stamina": 1.3, "positioning": 1.2, "passing": 1.0, "defending": 1.0, "interceptions": 1.1, "work_rate": 1.2},
+    "enganche": {"vision": 1.4, "passing": 1.3, "flair": 1.3, "ball_control": 1.2, "dribbling": 1.1, "stamina": 0.5},
+    "wide_midfielder": {"stamina": 1.2, "crossing": 1.1, "passing": 1.0, "pace": 1.0, "dribbling": 1.0, "defending": 0.8},
+    "inverted_wing_back": {"pace": 1.1, "passing": 1.1, "dribbling": 1.0, "defending": 0.9, "vision": 1.0, "ball_control": 1.0},
+    "raumdeuter": {"positioning": 1.4, "finishing": 1.3, "composure": 1.2, "acceleration": 1.1, "agility": 1.1, "stamina": 0.7},
+    "deep_lying_forward": {"passing": 1.2, "vision": 1.1, "ball_control": 1.1, "composure": 1.1, "finishing": 1.0, "strength": 1.0},
+    "false_nine": {"vision": 1.3, "passing": 1.2, "dribbling": 1.2, "ball_control": 1.2, "finishing": 1.0, "composure": 1.1},
+    "complete_forward": {"finishing": 1.2, "strength": 1.1, "heading_accuracy": 1.1, "dribbling": 1.0, "pace": 1.0, "composure": 1.0, "passing": 0.9},
 }
 
 _POSITIONS = ["GK", "CB", "LB", "RB", "CDM", "CM", "CAM", "LW", "RW", "ST"]
@@ -474,6 +489,14 @@ class YouthAcademyManager:
         # Determine wage: very low for youth
         wage = max(500, overall * 50)
 
+        # Determine initial squad role based on ability
+        if overall >= 65:
+            initial_role = "rotation"
+        elif overall >= 55:
+            initial_role = "backup"
+        else:
+            initial_role = "youth"
+
         player = Player(
             name=cand.name,
             short_name=cand.name,
@@ -488,7 +511,7 @@ class YouthAcademyManager:
             potential=actual_potential,
             current_ability=ca,
             potential_ability=actual_potential + random.randint(0, 15),
-            squad_role="youth",
+            squad_role=initial_role,
             **attrs,
             **mental,
         )
@@ -553,6 +576,167 @@ class YouthAcademyManager:
         self.session.delete(cand)
         self.session.flush()
         return True
+
+    # ── Loan management ────────────────────────────────────────────────
+
+    def loan_out_youth(
+        self,
+        player_id: int,
+        destination_club_id: int,
+        season: int,
+        duration_seasons: int = 1,
+    ) -> bool:
+        """Send a promoted youth player out on loan for development.
+
+        The player moves to the destination club temporarily.
+        Playing time at the loan club boosts development.
+        """
+        player = self.session.get(Player, player_id)
+        if not player or player.club_id is None:
+            return False
+
+        origin_club = self.session.get(Club, player.club_id)
+        dest_club = self.session.get(Club, destination_club_id)
+        if not origin_club or not dest_club:
+            return False
+
+        # Store origin and move
+        player.is_loan = True
+        player.loan_from_club_id = player.club_id
+        player.club_id = destination_club_id
+        player.squad_role = "rotation"  # Loan clubs typically use them more
+
+        self.session.add(NewsItem(
+            season=season,
+            headline=f"{player.short_name or player.name} joins {dest_club.name} on loan",
+            body=(
+                f"{player.name} has left {origin_club.name} on a "
+                f"{duration_seasons}-season loan deal to {dest_club.name} "
+                f"for first-team experience."
+            ),
+            category="transfer",
+        ))
+
+        self.session.flush()
+        return True
+
+    def recall_from_loan(self, player_id: int, season: int) -> bool:
+        """Recall a player from loan back to the parent club."""
+        player = self.session.get(Player, player_id)
+        if not player or not player.is_loan or not player.loan_from_club_id:
+            return False
+
+        parent_club = self.session.get(Club, player.loan_from_club_id)
+        loan_club = self.session.get(Club, player.club_id)
+
+        player.club_id = player.loan_from_club_id
+        player.loan_from_club_id = None
+        player.is_loan = False
+
+        self.session.add(NewsItem(
+            season=season,
+            headline=f"{player.short_name or player.name} returns from loan",
+            body=(
+                f"{player.name} has returned to {parent_club.name if parent_club else 'parent club'} "
+                f"after a loan spell at {loan_club.name if loan_club else 'loan club'}."
+            ),
+            category="transfer",
+        ))
+
+        self.session.flush()
+        return True
+
+    def process_end_of_loan_returns(self, season: int):
+        """Return all players whose loan has expired (end of season)."""
+        loaned = (
+            self.session.query(Player)
+            .filter(Player.is_loan == True, Player.loan_from_club_id.isnot(None))
+            .all()
+        )
+        for p in loaned:
+            self.recall_from_loan(p.id, season)
+
+    # ── Squad role progression ───────────────────────────────────────
+
+    def update_squad_roles(self, club_id: int):
+        """Update squad roles for youth/young players based on performance.
+
+        Progression: youth -> backup -> rotation -> first_team
+        Based on: overall rating, age, minutes played, form.
+        """
+        players = (
+            self.session.query(Player)
+            .filter_by(club_id=club_id)
+            .order_by(Player.overall.desc())
+            .all()
+        )
+
+        if not players:
+            return
+
+        # Get squad average overall for context
+        avg_ovr = sum(p.overall or 50 for p in players) / len(players)
+
+        for p in players:
+            age = p.age or 20
+            ovr = p.overall or 50
+            minutes = p.minutes_season or 0
+            current_role = p.squad_role or "not_set"
+
+            # Skip players with manually set roles (star/key players)
+            if current_role in ("star_player", "key_player"):
+                continue
+
+            # Determine appropriate role based on performance
+            if ovr >= avg_ovr + 5 and minutes >= 1500:
+                target_role = "first_team"
+            elif ovr >= avg_ovr - 3 and minutes >= 800:
+                target_role = "rotation"
+            elif ovr >= avg_ovr - 8 or minutes >= 300:
+                target_role = "backup"
+            elif age <= 20:
+                target_role = "youth"
+            else:
+                target_role = "backup"
+
+            # Only promote, never demote via this auto-system
+            _role_order = {"youth": 0, "backup": 1, "rotation": 2, "first_team": 3}
+            current_rank = _role_order.get(current_role, 0)
+            target_rank = _role_order.get(target_role, 0)
+
+            if target_rank > current_rank:
+                p.squad_role = target_role
+
+        self.session.flush()
+
+    # ── AI auto-promotion ────────────────────────────────────────────
+
+    def auto_promote_for_ai(self, club_id: int, season: int):
+        """AI clubs automatically promote their best ready candidates.
+
+        Promotes candidates that are ready, up to a squad size limit.
+        """
+        promotable = self.get_promotable(club_id)
+        if not promotable:
+            return
+
+        squad_size = (
+            self.session.query(Player)
+            .filter_by(club_id=club_id)
+            .count()
+        )
+
+        # AI clubs promote top candidates if squad has room (< 30 players)
+        for cand in promotable:
+            if squad_size >= 30:
+                break
+            # Only promote if CA is decent (above 40)
+            if (cand.current_ability or 0) >= 40:
+                self.promote_to_first_team(cand.id, season)
+                squad_size += 1
+            elif cand.age >= 19:
+                # Release candidates that are old but not good enough
+                self.release_candidate(cand.id, season)
 
     # ── Attribute generation helpers ───────────────────────────────────
 

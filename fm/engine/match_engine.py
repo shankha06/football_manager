@@ -956,12 +956,49 @@ class AdvancedMatchEngine:
         for minute in range(1, MATCH_MINUTES + 1):
             state.current_minute = minute
 
+            # ── Warmup curve: 93% at min 1 → 100% by min 20 ──
+            if minute <= 20:
+                warmup = 0.93 + (minute / 20.0) * 0.07
+                for p in state.home_players + state.away_players:
+                    if p.is_on_pitch:
+                        p.warmup_factor = min(warmup, 1.0)
+            elif minute == 21:
+                for p in state.home_players + state.away_players:
+                    p.warmup_factor = 1.0
+
+            # ── In-match confidence: slow decay toward 0 each minute ──
+            for p in state.home_players + state.away_players:
+                if p.is_on_pitch:
+                    p.match_confidence *= 0.98
+
+            # ── Gegenpress countdown ──
+            if state.gegenpress_countdown > 0:
+                state.gegenpress_countdown -= 1
+                if state.gegenpress_countdown <= 0:
+                    state.gegenpress_active = ""
+
+            # ── Overlapping run reset (recalculated each minute) ──
+            for p in state.home_players + state.away_players:
+                if p.overlap_active:
+                    # Extra stamina cost for the overlapping run
+                    p.stamina_current = max(0, p.stamina_current - 0.15)
+                    p.overlap_active = False
+
             # Apply match plans at key moments (60', 75')
             if minute in (60, 75):
                 self._apply_match_plans(
                     state, h_tac_live, a_tac_live, minute,
                     home_name, away_name,
                 )
+
+            # ── Mid-match formation switch for red cards ──
+            if minute > 1:
+                self._check_formation_switch(state, h_tac_live, "home", home_name)
+                self._check_formation_switch(state, a_tac_live, "away", away_name)
+
+            # ── Overlapping runs: fullbacks push forward when attacking ──
+            self._update_overlapping_runs(state, h_tac_live, "home")
+            self._update_overlapping_runs(state, a_tac_live, "away")
 
             self._simulate_minute(
                 state, minute, h_tac_live, a_tac_live, home_name, away_name,
@@ -1000,13 +1037,16 @@ class AdvancedMatchEngine:
         # Calculate final ratings
         self._finalize_ratings(state)
 
-        # Match Situations: Post-match analysis
-        if state.home_goals == 0:
-            gk = state.get_gk("home")
-            if gk: self._trigger_situation(state, "handle_clean_sheet", player_id=gk.player_id)
-        if state.away_goals == 0:
-            gk = state.get_gk("away")
-            if gk: self._trigger_situation(state, "handle_clean_sheet", player_id=gk.player_id)
+        # Match Situations: Post-match analysis — clean sheets
+        for cs_side in ["home", "away"]:
+            opp_goals = state.away_goals if cs_side == "home" else state.home_goals
+            if opp_goals == 0:
+                # Detect injury crisis: 2+ injured starters
+                injured_count = sum(1 for p in (state.home_players if cs_side == "home" else state.away_players)
+                                    if not p.is_on_pitch and not p.red_card)
+                gk = state.get_gk(cs_side)
+                if gk:
+                    self._trigger_situation(state, "handle_clean_sheet", player_id=gk.player_id, after_injury_crisis=injured_count >= 2)
 
         # comebacks / upsets
         if state.home_goals > state.away_goals:
@@ -1017,20 +1057,258 @@ class AdvancedMatchEngine:
             win_side = None
 
         if win_side:
-            # Check for comeback / upset
-            score_diff = abs(state.home_goals - state.away_goals)
-            if score_diff >= 3:
-                # Potential upset if ratings were lower? 
-                # MatchSituationEngine usually handles reputation comparison.
-                pass
+            win_goals = state.home_goals if win_side == "home" else state.away_goals
+            lose_goals = state.away_goals if win_side == "home" else state.home_goals
 
-        # Scoring runs
+            # Comeback victory: was trailing by 2+ goals at some point
+            max_deficit = 0
+            for ev in state.events:
+                if ev["type"] == "goal":
+                    hg, ag = ev["home_goals"], ev["away_goals"]
+                    if win_side == "home":
+                        deficit = ag - hg
+                    else:
+                        deficit = hg - ag
+                    if deficit > max_deficit:
+                        max_deficit = deficit
+            if max_deficit >= 2:
+                for p in (state.home_players if win_side == "home" else state.away_players):
+                    if p.player_id:
+                        self._trigger_situation(state, "handle_comeback_victory", player_id=p.player_id, deficit_goals=max_deficit)
+                        break
+
+            # Upset victory: winning team has lower average overall
+            win_players = state.home_players if win_side == "home" else state.away_players
+            lose_players = state.away_players if win_side == "home" else state.home_players
+            avg_win = sum(p.overall for p in win_players if p.overall) / max(len(win_players), 1)
+            avg_lose = sum(p.overall for p in lose_players if p.overall) / max(len(lose_players), 1)
+            rating_gap = avg_lose - avg_win
+            if rating_gap >= 5:
+                for p in win_players:
+                    if p.player_id:
+                        self._trigger_situation(state, "handle_upset_victory", player_id=p.player_id, opponent_rating_advantage=int(rating_gap))
+                        break
+
+        # Derby match
+        if self._match_context and self._match_context.is_derby:
+            result_char = "H" if state.home_goals > state.away_goals else ("A" if state.away_goals > state.home_goals else "D")
+            if self._match_context.session:
+                from fm.db.models import Player as _P2
+                h_pid = next((p.player_id for p in state.home_players if p.player_id), None)
+                a_pid = next((p.player_id for p in state.away_players if p.player_id), None)
+                h_cid = 0
+                a_cid = 0
+                if h_pid:
+                    _hp = self._match_context.session.get(_P2, h_pid)
+                    if _hp: h_cid = _hp.club_id
+                if a_pid:
+                    _ap = self._match_context.session.get(_P2, a_pid)
+                    if _ap: a_cid = _ap.club_id
+                if h_cid and a_cid:
+                    MatchSituationEngine.handle_derby_match(
+                        session=self._match_context.session,
+                        home_club_id=h_cid, away_club_id=a_cid,
+                        result=result_char, intensity_level=7,
+                        season=self._match_context.season_year,
+                        matchday=self._match_context.matchday,
+                    )
+
+        # Veteran performance (age 33+, scored or assisted)
         for p in state.home_players + state.away_players:
-            if p.goals > 0:
-                self._trigger_situation(state, "handle_scoring_run", player_id=p.player_id)
+            if (p.age or 25) >= 33 and (p.goals + p.assists) >= 1:
+                self._trigger_situation(state, "handle_veteran_performance", player_id=p.player_id, goals_assists=p.goals + p.assists)
+
+        # Young player breakout (U23, scored or high rating)
+        for p in state.home_players + state.away_players:
+            if (p.age or 25) < 23 and p.goals > 0:
+                self._trigger_situation(state, "handle_young_player_debut", player_id=p.player_id, is_breakout_performance=True)
+
+        # Scoring runs (pass current match goals; the handler filters by threshold)
+        for p in state.home_players + state.away_players:
+            if p.goals >= 2:
+                self._trigger_situation(state, "handle_scoring_run", player_id=p.player_id, goals_last_3_matches=p.goals)
 
         self._match_context = None
         return state.to_result()
+
+    # ── In-match confidence ──────────────────────────────────────────────
+
+    _CONFIDENCE_DELTAS = {
+        "goal": 0.04, "assist": 0.03, "tackle_won": 0.01,
+        "key_pass": 0.02, "dribble_won": 0.01,
+        "big_chance_missed": -0.03, "error_goal": -0.05,
+        "dribble_lost_final_third": -0.01,
+    }
+
+    def _update_confidence(self, player: PlayerInMatch, event_type: str) -> None:
+        """Adjust a player's in-match confidence after a positive/negative event."""
+        delta = self._CONFIDENCE_DELTAS.get(event_type, 0.0)
+        player.match_confidence = max(-0.10, min(0.10, player.match_confidence + delta))
+
+    # ── Mid-match formation switch ───────────────────────────────────────
+
+    _RED_CARD_FORMATIONS = {
+        # original → fallback when losing a player from each line
+        "4-4-2": {"DEF": "3-4-2", "MID": "4-3-2", "FWD": "4-4-1"},
+        "4-3-3": {"DEF": "3-3-3", "MID": "4-2-3", "FWD": "4-3-2"},
+        "3-5-2": {"DEF": "3-4-2", "MID": "3-4-2", "FWD": "3-5-1"},
+        "4-2-3-1": {"DEF": "3-2-3-1", "MID": "4-2-2-1", "FWD": "4-2-3"},
+        "5-3-2": {"DEF": "4-3-2", "MID": "5-2-2", "FWD": "5-3-1"},
+    }
+
+    _ATTACKING_FORMATIONS = {"4-3-3", "3-4-3", "4-2-3-1"}
+    _DEFENSIVE_FORMATIONS = {"5-4-1", "5-3-2", "4-5-1"}
+
+    def _check_formation_switch(
+        self, state: MatchState, tac: TacticalContext, side: str, team_name: str,
+    ) -> None:
+        """Switch formation in response to red cards or desperate scoreline."""
+        switched = state.home_formation_switched if side == "home" else state.away_formation_switched
+        if switched or tac.formation_locked:
+            return
+
+        red_positions = state.home_red_card_positions if side == "home" else state.away_red_card_positions
+        minute = state.current_minute
+        own_goals = state.home_goals if side == "home" else state.away_goals
+        opp_goals = state.away_goals if side == "home" else state.home_goals
+        diff = own_goals - opp_goals
+
+        new_formation = None
+
+        # Red card response: switch to compensate
+        if red_positions:
+            last_red_pos = red_positions[-1]
+            line = "DEF" if last_red_pos in ("CB", "LB", "RB", "LWB", "RWB") else \
+                   "FWD" if last_red_pos in ("ST", "CF", "LW", "RW") else "MID"
+            fallbacks = self._RED_CARD_FORMATIONS.get(tac.formation, {})
+            new_formation = fallbacks.get(line)
+
+        # Losing by 2+ after min 70: go attacking
+        elif diff <= -2 and minute >= 70:
+            if tac.formation not in self._ATTACKING_FORMATIONS:
+                new_formation = "4-3-3"
+
+        # Winning by 2+ after min 80: go defensive
+        elif diff >= 2 and minute >= 80:
+            if tac.formation not in self._DEFENSIVE_FORMATIONS:
+                new_formation = "5-4-1"
+
+        if new_formation and new_formation != tac.formation:
+            old = tac.formation
+            tac.formation = new_formation
+            tac.formation_locked = True
+            if side == "home":
+                state.home_formation_switched = True
+            else:
+                state.away_formation_switched = True
+            state.commentary.append(
+                f"{minute}' TACTICAL SWITCH: {team_name} changes formation "
+                f"from {old} to {new_formation}"
+            )
+
+    # ── Overlapping runs ─────────────────────────────────────────────────
+
+    _OVERLAP_POSITIONS = {"LB", "RB", "LWB", "RWB"}
+    _WINGER_POSITIONS = {"LW", "RW", "LM", "RM"}
+
+    def _update_overlapping_runs(
+        self, state: MatchState, tac: TacticalContext, side: str,
+    ) -> None:
+        """Fullbacks overlap when the team is attacking and winger is advanced."""
+        players = state.home_players if side == "home" else state.away_players
+        attacking = (
+            (side == "home" and state.ball_side == "home" and state.ball_zone_col >= 4) or
+            (side == "away" and state.ball_side == "away" and state.ball_zone_col >= 4)
+        )
+        if not attacking:
+            return
+
+        outfield = [p for p in players if p.is_on_pitch and not p.is_gk]
+        fullbacks = [p for p in outfield if p.position in self._OVERLAP_POSITIONS]
+        wingers = [p for p in outfield if p.position in self._WINGER_POSITIONS]
+
+        for fb in fullbacks:
+            if fb.stamina_current < 45:
+                continue
+            # Find same-flank winger
+            same_flank = None
+            for w in wingers:
+                if (fb.position in ("LB", "LWB") and w.position in ("LW", "LM")) or \
+                   (fb.position in ("RB", "RWB") and w.position in ("RW", "RM")):
+                    same_flank = w
+                    break
+            if same_flank and same_flank.zone_col >= 3:
+                fb.overlap_active = True
+                fb.zone_col = min(fb.zone_col + 1, 5)
+
+    # ── Gegenpressing ────────────────────────────────────────────────────
+
+    def _trigger_gegenpress(
+        self, state: MatchState, losing_side: str, tac: TacticalContext,
+    ) -> None:
+        """Activate gegenpressing after a turnover if pressing is high."""
+        if tac.pressing in ("high", "very_high") or tac.counter_attack:
+            state.gegenpress_active = losing_side
+            state.gegenpress_countdown = 2  # active for 2 chain steps
+
+    def _gegenpress_turnover_bonus(self, state: MatchState) -> float:
+        """Extra turnover chance during active gegenpress."""
+        if state.gegenpress_active and state.gegenpress_countdown > 0:
+            return 0.10  # +10% turnover chance
+        return 0.0
+
+    # ── Positional substitutions ─────────────────────────────────────────
+
+    _COMPATIBLE_POSITIONS = {
+        "LB": {"LWB", "LM"}, "RB": {"RWB", "RM"}, "LWB": {"LB", "LM"},
+        "RWB": {"RB", "RM"}, "CB": {"CDM"}, "CDM": {"CB", "CM"},
+        "CM": {"CDM", "CAM"}, "CAM": {"CM", "CF"}, "LW": {"LM", "ST"},
+        "RW": {"RM", "ST"}, "LM": {"LW", "LB"}, "RM": {"RW", "RB"},
+        "ST": {"CF", "CAM"}, "CF": {"ST", "CAM"}, "GK": set(),
+    }
+    _ATTACKER_POS = {"ST", "CF", "LW", "RW", "CAM"}
+    _DEFENDER_POS = {"CB", "LB", "RB", "LWB", "RWB", "CDM"}
+
+    def _score_sub_candidate(
+        self, out_p: PlayerInMatch, sub_p: PlayerInMatch,
+        own_goals: int, opp_goals: int, minute: int,
+    ) -> float:
+        """Score a (out_player, sub_player) pair for substitution priority."""
+        score = 0.0
+
+        # 1. Stamina urgency
+        if out_p.stamina_current < 20:
+            score += 50
+        elif out_p.stamina_current < 35:
+            score += 30
+        elif out_p.stamina_current < 50:
+            score += 15
+        elif out_p.stamina_current < 65:
+            score += 5
+
+        # 2. Position match
+        if sub_p.position == out_p.position:
+            score += 25
+        elif sub_p.position in self._COMPATIBLE_POSITIONS.get(out_p.position, set()):
+            score += 12
+
+        # 3. Tactical need
+        diff = own_goals - opp_goals
+        if diff < 0 and sub_p.position in self._ATTACKER_POS:
+            score += 10
+        if diff > 0 and sub_p.position in self._DEFENDER_POS:
+            score += 8
+        if minute >= 75 and diff < 0:
+            score += 5
+
+        # 4. Quality
+        score += (sub_p.overall - 50) * 0.2
+
+        # 5. Yellow card risk
+        if out_p.yellow_cards > 0:
+            score += 8
+
+        return score
 
     # ── Match plan adjustments ─────────────────────────────────────────────
 
@@ -2301,17 +2579,36 @@ class AdvancedMatchEngine:
         # Match Situations: Defensive Collapse (3 goals in 15 mins)
         recent_goals = [e for e in state.events if e["type"] == "goal" and e["side"] == side and minute - e["minute"] <= 15]
         if len(recent_goals) >= 3:
-             self._trigger_situation(state, "handle_defensive_collapse", minute=minute)
+            # The defending side collapsed
+            def_side = opp_side
+            def_club_id = 0
+            for p in (state.home_players if def_side == "home" else state.away_players):
+                if p.player_id:
+                    from fm.db.models import Player as _P
+                    _pdb = self._match_context.session.get(_P, p.player_id) if self._match_context and self._match_context.session else None
+                    if _pdb:
+                        def_club_id = _pdb.club_id
+                        break
+            self._trigger_situation(state, "handle_defensive_collapse", club_id=def_club_id, goals_conceded=len(recent_goals), time_window=15)
 
         # Match Situations: Goalkeeper Error
         # If xG was very low but it was a goal, it might be an error (simplified)
         if xg_val < 0.05 and random.random() < 0.4:
             gk = state.get_gk(opp_side)
             if gk:
-                self._trigger_situation(state, "handle_goalkeeper_error", player_id=gk.player_id, minute=minute)
+                self._trigger_situation(state, "handle_goalkeeper_error", goalkeeper_id=gk.player_id, minute=minute)
 
         own_goals = state.home_goals if side == "home" else state.away_goals
         opp_goals = state.away_goals if side == "home" else state.home_goals
+
+        # In-match confidence boost for scorer and assister
+        self._update_confidence(scorer, "goal")
+        if assister:
+            self._update_confidence(assister, "assist")
+        # GK confidence hit for conceding
+        opp_gk = state.get_gk(opp_side)
+        if opp_gk and xg_val < 0.10:
+            self._update_confidence(opp_gk, "error_goal")
 
         # Commentary
         assist_text = f" (assist: {assister.name})" if assister else ""
@@ -2349,10 +2646,10 @@ class AdvancedMatchEngine:
         if session is None:
             return
 
-        # Find the player's club_id if possible
-        player_id = kwargs.get('player_id')
-        c_id = 0
-        if player_id:
+        # Find the player's club_id if possible (kwargs can override)
+        player_id = kwargs.get('player_id') or kwargs.get('goalkeeper_id')
+        c_id = kwargs.pop('club_id', 0)
+        if not c_id and player_id:
             from fm.db.models import Player
             p_db = session.get(Player, player_id)
             if p_db:
@@ -2361,22 +2658,54 @@ class AdvancedMatchEngine:
         # Call the situation engine
         method = getattr(MatchSituationEngine, method_name, None)
         if method:
-            # Call and get results
-            result = method(
-                session=session,
-                club_id=c_id,
-                season=self._match_context.season_year,
-                matchday=self._match_context.matchday,
-                **kwargs
-            )
-            
-            # Apply results (e.g. momentum)
-            if result and "momentum_change" in result:
-                 # result["momentum_change"] is usually a float
-                 pass
-            
+            try:
+                result = method(
+                    session=session,
+                    club_id=c_id,
+                    season=self._match_context.season_year,
+                    matchday=self._match_context.matchday,
+                    **kwargs
+                )
+            except TypeError:
+                return
+
+            if not result:
+                return
+
+            # Apply momentum effects to match state
+            side = None
+            if player_id:
+                for p in state.home_players:
+                    if p.player_id == player_id:
+                        side = "home"
+                        break
+                if not side:
+                    for p in state.away_players:
+                        if p.player_id == player_id:
+                            side = "away"
+                            break
+
+            if side:
+                opp = "away" if side == "home" else "home"
+                # Positive boosts
+                boost = 0.0
+                for key in ("momentum_boost", "confidence_boost", "belief_surge", "underdog_factor"):
+                    val = result.get(key, 0)
+                    if isinstance(val, (int, float)) and val > 0:
+                        boost += val
+                if boost > 0:
+                    state._update_momentum(side, "goal" if boost > 20 else "shot_on_target")
+                # Negative hits
+                loss = 0.0
+                for key in ("momentum_loss", "morale_shock", "defensive_cohesion"):
+                    val = result.get(key, 0)
+                    if isinstance(val, (int, float)) and val < 0:
+                        loss += abs(val)
+                if loss > 0:
+                    state._update_momentum(side, "concede")
+
             # News and commentary
-            if result and "news" in result:
+            if "news" in result:
                 state.commentary.append(f"HOT NEWS: {result['news']['title']}")
 
     def _register_shot_miss(
@@ -2712,7 +3041,11 @@ class AdvancedMatchEngine:
         h_name: str,
         a_name: str,
     ) -> None:
-        """AI substitutions for tired / injured players."""
+        """AI substitutions using positional intelligence.
+
+        Considers: stamina urgency, position compatibility, tactical need
+        (score state), player quality, and yellow card risk.
+        """
         for side, players, subs, subs_made, name in [
             ("home", state.home_players, state.home_subs, state.home_subs_made, h_name),
             ("away", state.away_players, state.away_subs, state.away_subs_made, a_name),
@@ -2720,33 +3053,37 @@ class AdvancedMatchEngine:
             if subs_made >= state.max_subs or not subs:
                 continue
 
-            # Find most tired outfield player
-            tired = [
+            own_goals = state.home_goals if side == "home" else state.away_goals
+            opp_goals = state.away_goals if side == "home" else state.home_goals
+
+            # Candidates: outfield players on pitch
+            candidates_out = [
                 p for p in players
                 if p.is_on_pitch and not p.is_gk and not p.red_card
-                and p.stamina_current < 35
             ]
-            if not tired:
+            available_subs = [s for s in subs if not s.is_on_pitch]
+            if not candidates_out or not available_subs:
                 continue
 
-            tired.sort(key=lambda p: p.stamina_current)
-            out_player = tired[0]
+            # Score all (out, sub) pairs
+            best_score = 0.0
+            best_pair = None
+            for out_p in candidates_out:
+                for sub_p in available_subs:
+                    score = self._score_sub_candidate(
+                        out_p, sub_p, own_goals, opp_goals, minute,
+                    )
+                    if score > best_score:
+                        best_score = score
+                        best_pair = (out_p, sub_p)
 
-            # Find best available sub (match position if possible)
-            best_sub = None
-            for s in subs:
-                if s.is_on_pitch:
-                    continue
-                if s.position == out_player.position:
-                    best_sub = s
-                    break
-            if best_sub is None:
-                for s in subs:
-                    if not s.is_on_pitch:
-                        best_sub = s
-                        break
-            if best_sub is None:
+            # Only sub if the score justifies it
+            # Stamina < 35 → score ≥ 30, yellow card + tired → ~38, tactical → ~20
+            threshold = 18 if minute >= 65 else 25
+            if best_pair is None or best_score < threshold:
                 continue
+
+            out_player, best_sub = best_pair
 
             # Make the sub
             out_player.is_on_pitch = False
@@ -2754,14 +3091,27 @@ class AdvancedMatchEngine:
             best_sub.side = side
             best_sub.zone_col = out_player.zone_col
             best_sub.zone_row = out_player.zone_row
+            best_sub.warmup_factor = 0.96  # subs come on slightly cold
 
             if side == "home":
                 state.home_subs_made += 1
             else:
                 state.away_subs_made += 1
 
+            # Tactical reason commentary
+            reason = ""
+            if out_player.stamina_current < 35:
+                reason = " (fatigue)"
+            elif out_player.yellow_cards > 0:
+                reason = " (yellow card risk)"
+            elif own_goals < opp_goals and best_sub.position in self._ATTACKER_POS:
+                reason = " (tactical - chasing the game)"
+            elif own_goals > opp_goals and best_sub.position in self._DEFENDER_POS:
+                reason = " (tactical - protecting the lead)"
+
             state.commentary.append(
-                f"{minute}' Substitution for {name}: {best_sub.name} replaces {out_player.name}."
+                f"{minute}' Substitution for {name}: {best_sub.name} replaces "
+                f"{out_player.name}{reason}."
             )
             state.events.append({
                 "type": "substitution", "minute": minute, "side": side,
@@ -2769,7 +3119,7 @@ class AdvancedMatchEngine:
                 "player_off": out_player.name, "player_off_id": out_player.player_id,
             })
             # Match Situations: Young Player Debut
-            self._trigger_situation(state, "handle_young_player_debut", player_id=best_sub.player_id, minute=minute)
+            self._trigger_situation(state, "handle_young_player_debut", player_id=best_sub.player_id, is_breakout_performance=False)
 
     # ── Scorecard generation ──────────────────────────────────────────────
 

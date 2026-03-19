@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useStore } from '../store';
 import { motion } from 'framer-motion';
 import { Trophy } from 'lucide-react';
+import ClubBadge from '../components/common/ClubBadge';
+import { LeagueLogo } from '../components/LeagueLogo';
 
 export default function LeagueTable() {
   const { standings, club, fetchStandings } = useStore();
@@ -17,9 +19,19 @@ export default function LeagueTable() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-6">
         <Trophy size={20} className="text-[var(--fm-yellow)]" />
         <h1 className="text-2xl font-bold tracking-tight">League Table</h1>
+        {club?.league_name && (
+          <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--fm-surface)] border border-[var(--fm-border)] text-xs font-medium text-[var(--fm-text-muted)]">
+            <LeagueLogo
+              leagueId={club.league_name === 'Premier League' ? 1 : club.league_name === 'La Liga' ? 7 : club.league_name === 'Bundesliga' ? 12 : club.league_name === 'Serie A' ? 15 : club.league_name === 'Ligue 1' ? 20 : 1}
+              leagueName={club.league_name}
+              size={14}
+            />
+            {club.league_name}
+          </div>
+        )}
       </div>
 
       <div className="card !p-0 overflow-hidden">
@@ -49,13 +61,12 @@ export default function LeagueTable() {
               return (
                 <tr
                   key={s.club_id}
-                  className={`border-t border-[var(--fm-border)] transition-colors ${
-                    isOurs
-                      ? 'bg-[var(--fm-accent)]/8'
-                      : i % 2 === 1
+                  className={`border-t border-[var(--fm-border)] transition-colors ${isOurs
+                    ? 'bg-[var(--fm-accent)]/8'
+                    : i % 2 === 1
                       ? 'bg-[var(--fm-surface2)]/20'
                       : 'hover:bg-[var(--fm-surface2)]'
-                  }`}
+                    }`}
                 >
                   <td className="px-3 py-2.5 relative">
                     {/* Position indicator */}
@@ -65,14 +76,16 @@ export default function LeagueTable() {
                     {isRelegation && (
                       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--fm-red)] rounded-r" />
                     )}
-                    <span className={`font-semibold tabular-nums ${
-                      isOurs ? 'text-[var(--fm-accent)]' : 'text-[var(--fm-text-muted)]'
-                    }`}>
+                    <span className={`font-semibold tabular-nums ${isOurs ? 'text-[var(--fm-accent)]' : 'text-[var(--fm-text-muted)]'
+                      }`}>
                       {pos}
                     </span>
                   </td>
                   <td className={`px-3 py-2.5 font-medium ${isOurs ? 'text-[var(--fm-accent)] font-bold' : ''}`}>
-                    {s.club_name}
+                    <div className="flex items-center gap-2">
+                      <ClubBadge clubId={s.club_id} name={s.club_name} size={22} />
+                      <span>{s.club_name}</span>
+                    </div>
                   </td>
                   <td className="px-3 py-2.5 text-center tabular-nums text-[var(--fm-text-muted)]">{s.played}</td>
                   <td className="px-3 py-2.5 text-center tabular-nums">{s.won}</td>
@@ -80,10 +93,9 @@ export default function LeagueTable() {
                   <td className="px-3 py-2.5 text-center tabular-nums text-[var(--fm-text-muted)]">{s.lost}</td>
                   <td className="px-3 py-2.5 text-center tabular-nums">{s.goals_for}</td>
                   <td className="px-3 py-2.5 text-center tabular-nums text-[var(--fm-text-muted)]">{s.goals_against}</td>
-                  <td className={`px-3 py-2.5 text-center tabular-nums font-semibold ${
-                    s.goal_difference > 0 ? 'text-[var(--fm-green)]' :
+                  <td className={`px-3 py-2.5 text-center tabular-nums font-semibold ${s.goal_difference > 0 ? 'text-[var(--fm-green)]' :
                     s.goal_difference < 0 ? 'text-[var(--fm-red)]' : 'text-[var(--fm-text-muted)]'
-                  }`}>
+                    }`}>
                     {s.goal_difference > 0 ? `+${s.goal_difference}` : s.goal_difference}
                   </td>
                   <td className="px-3 py-2.5 text-center">
@@ -96,11 +108,10 @@ export default function LeagueTable() {
                       {(s.form || '').split('').slice(-5).map((r, j) => (
                         <span
                           key={j}
-                          className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${
-                            r === 'W' ? 'bg-[var(--fm-green)]/15 text-[var(--fm-green)]' :
+                          className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${r === 'W' ? 'bg-[var(--fm-green)]/15 text-[var(--fm-green)]' :
                             r === 'D' ? 'bg-[var(--fm-yellow)]/15 text-[var(--fm-yellow)]' :
-                            'bg-[var(--fm-red)]/15 text-[var(--fm-red)]'
-                          }`}
+                              'bg-[var(--fm-red)]/15 text-[var(--fm-red)]'
+                            }`}
                         >
                           {r}
                         </span>

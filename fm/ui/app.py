@@ -2335,6 +2335,12 @@ class MatchDayScreen(Screen):
         """Push the pre-match team talk screen before simulating."""
         session = get_session()
         season = session.query(Season).order_by(Season.year.desc()).first()
+        if not season:
+            session.close()
+            btn = self.query_one("#sim-btn", Button)
+            btn.disabled = False
+            return
+
         next_md = (season.current_matchday or 0) + 1
 
         fixture = session.query(Fixture).filter(
@@ -2359,6 +2365,7 @@ class MatchDayScreen(Screen):
                 self.club_id, home.name, away.name, is_home, opp_rep,
             ))
         else:
+            # No human fixture — skip pre-talk and go straight to simulation
             session.close()
             self._pre_talk_done = True
             self.set_timer(0.1, self._simulate)
@@ -2371,8 +2378,24 @@ class MatchDayScreen(Screen):
 
         log.write("[bold #58a6ff]⚽ Match underway...[/]\n")
 
-        result = sm.advance_matchday(human_club_id=self.club_id)
+        try:
+            result = sm.advance_matchday(human_club_id=self.club_id)
+        except Exception as e:
+            log.write(f"[bold #E74C3C]Error during simulation: {e}[/]\n")
+            session.close()
+            btn = self.query_one("#sim-btn", Button)
+            btn.disabled = False
+            btn.label = "▶ Retry Matchday"
+            return
+
         self._advance_result = result
+
+        if result["matches"] == 0:
+            # No fixtures to simulate — auto-advance
+            log.write("[dim]No fixtures this matchday. Auto-advancing...[/]\n")
+            session.close()
+            self._reset_for_next_match()
+            return
 
         if result["human_result"]:
             hr = result["human_result"]
@@ -2393,6 +2416,8 @@ class MatchDayScreen(Screen):
             self._commentary_index = 0
             self._h_name = h_name
             self._a_name = a_name
+
+            session.close()
 
             # Show live scoreboard
             scoreboard.update(Panel(

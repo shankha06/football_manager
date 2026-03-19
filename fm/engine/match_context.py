@@ -851,6 +851,12 @@ def build_match_context(
     ctx.is_cup = is_cup
     ctx.importance = 1.2 if is_cup else 1.0
 
+    # Derby detection: same league and reputation within 15 points
+    if (home_club.league_id and home_club.league_id == away_club.league_id
+            and abs((home_club.reputation or 50) - (away_club.reputation or 50)) <= 15):
+        ctx.is_derby = True
+        ctx.importance = max(ctx.importance, 1.3)
+
     # Tactical matchup (both flat and granular)
     if home_tactics and away_tactics:
         matchup = analyze_tactical_matchup_detailed(home_tactics, away_tactics)

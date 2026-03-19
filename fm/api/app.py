@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from fm.api.routers import (
     saves,
@@ -47,6 +49,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Serve static assets
+    assets_path = Path(__file__).resolve().parent.parent.parent / "assets"
+    assets_path.mkdir(exist_ok=True)
+    app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
 
     # REST routers
     app.include_router(saves.router, prefix="/api/saves", tags=["saves"])
